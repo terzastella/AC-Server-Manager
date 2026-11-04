@@ -51,49 +51,46 @@ in file leggibili (`cfg/*.ini`, `content/`, `logs/`), senza database né servizi
 
 ## Come funziona
 
-```mermaid
-flowchart LR
-  subgraph Host["PC di chi ospita"]
-    M["ACServerControl.exe<br/>manager + HTTP API"]
-    S["acServer.exe"]
-    C["content/ · cfg/ · logs/"]
-    M -->|avvia, ferma, configura| S
-    M <--> C
-  end
-
-  subgraph Friend["PC degli amici"]
-    L["ACLauncher.exe"]
-    G["acs.exe"]
-    L -->|scrive race.ini e avvia| G
-  end
-
-  L -->|"link invito + token<br/>GET /api/server · POST /api/reserve"| M
-  G -->|join| S
+```text
++- PC DI CHI OSPITA ---------------------------------------------+
+|                                                                |
+|  +---------------------+              +---------------------+  |
+|  | ACServerControl.exe |              | acServer.exe        |  |
+|  | manager + API       | <------->    | UDP/TCP 9600        |  |
+|  | HTTP : 8082         |              | HTTP   8081         |  |
+|  +---------------------+              +---------------------+  |
+|             |                                    ^             |
+|             v content/ . cfg/ . logs/            |             |
+|                                                  |             |
+|                                                  |             |
++--------------------------------------------------|-------------+
++- PC DEGLI AMICI -----------------------------------------------+
+|                                                  |             |
+|  +---------------------+   link + token          | partita     |
+|  | ACLauncher.exe      |   GET  /api/server      |             |
+|  | apre il link        |   POST /api/reserve     |             |
+|  | prenota lo slot     |                         |             |
+|  +---------------------+                         |             |
+|             v                                    |             |
+|     +-------------+                              |             |
+|     | acs.exe     +------------------------------+             |
+|     +-------------+                                            |
+|                                                                |
++----------------------------------------------------------------+
 ```
 
-Il flusso di ingresso, in breve:
+In pratica:
 
-```mermaid
-sequenceDiagram
-  participant A as Amico
-  participant L as ACLauncher
-  participant M as Manager (HTTP API)
-  participant S as acServer
-  participant G as Assetto Corsa
-
-  A->>L: apre il link acservercontrol://join?...
-  L->>M: GET /api/server?token=...
-  M-->>L: nome, pista, auto e livree dichiarate
-  A->>L: sceglie auto, livrea e nome
-  L->>M: POST /api/reserve
-  M->>S: aggiorna lo slot in entry_list.ini
-  L->>G: scrive [REMOTE] in race.ini e lancia acs.exe
-  G->>S: entra nello slot prenotato
-```
+1. L'host apre **ACServerControl.exe** e avvia `acServer.exe` (`UDP/TCP 9600`, `HTTP 8081`).
+2. Il manager genera un link: `acservercontrol://join?ip=…&httpPort=8081&apiPort=8082&token=…`.
+3. L'amico lo apre: **ACLauncher.exe** chiama `GET /api/server` e riceve nome, pista, auto e livree.
+4. Sceglie auto, livrea e nome → `POST /api/reserve` → lo slot viene scritto in `entry_list.ini`.
+5. Il launcher scrive `race.ini` (sezione `[REMOTE]`) e avvia `acs.exe`.
+6. Assetto Corsa entra nel server, nello slot prenotato.
 
 Il manager parla con il server su `HTTP_PORT` (default 8081) e pubblica una piccola
 API per il launcher su `API_PORT` (default 8082), protetta da token con limite di
-richieste per IP. Il gioco usa `UDP_PORT`/`TCP_PORT` (default 9600).
+richieste per IP.
 
 ## Requisiti
 

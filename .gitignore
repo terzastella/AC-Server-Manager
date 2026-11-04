@@ -49,3 +49,6 @@ docs/superpowers/
 Thumbs.db
 desktop.ini
 *.log
+
+# loghi sorgente (master puliti in docs/brand)
+logos/

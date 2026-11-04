@@ -67,7 +67,7 @@ function Shell() {
     <div className="app">
       <aside className="sidebar">
         <div className="brand">
-          <img className="brand-mark" src="/logo-manager-badge.svg" alt="AC Server Control" />
+          <img className="brand-mark" src="/logo-manager.png" alt="AC Server Control" />
           <div className="brand-text">
             <strong>SERVER</strong>
             <span>CONTROL</span>

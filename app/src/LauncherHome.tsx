@@ -114,7 +114,7 @@ export function LauncherHome() {
     <div className="launcher">
       <header className="launcher-head">
         <div className="launcher-brand">
-          <img className="launcher-logo" src="/logo-launcher-badge.svg" alt="AC Launcher" />
+          <img className="launcher-logo" src="/logo-launcher.png" alt="AC Launcher" />
           <div>
             <strong>ASSETTO CORSA</strong>
             <span>{t("launcher.subtitle")}</span>

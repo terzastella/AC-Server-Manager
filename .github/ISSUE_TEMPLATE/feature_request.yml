@@ -1,0 +1,30 @@
+name: Feature request
+description: Proposta di una funzione o di un miglioramento
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Quale problema risolve
+      description: Descrivi la situazione concreta, non solo la soluzione.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Cosa proponi
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternative considerate
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Ambito
+      options:
+        - label: Riguarda il manager
+        - label: Riguarda il launcher
+        - label: Riguarda l'API di prenotazione
+        - label: Riguarda la documentazione

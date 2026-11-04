@@ -1,0 +1,25 @@
+version: 2
+updates:
+  # dipendenze frontend
+  - package-ecosystem: npm
+    directory: /app
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # dipendenze Rust
+  - package-ecosystem: cargo
+    directory: /app/src-tauri
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # azioni GitHub usate nei workflow
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

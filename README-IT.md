@@ -7,13 +7,20 @@
 <h1 align="center">AC Server Control</h1>
 
 <p align="center">
-  <a href="README.md">← Indice</a> · <b>Italiano</b> · <a href="README-EN.md">English</a>
+  <b><a href="README-IT.md">Italiano</a></b> · <a href="README.md">English</a>
 </p>
 
 <p align="center">
   Pannello portable per gestire un server dedicato di Assetto Corsa su Windows,<br>
   con un launcher che porta gli amici in partita con un solo clic.<br>
   <sub>Tauri 2 · React + TypeScript · Rust · interfaccia IT/EN</sub>
+</p>
+
+<p align="center">
+  <a href="https://github.com/terzastella/AC-Server-Manager/releases/latest"><img alt="Ultima release" src="https://img.shields.io/github/v/release/terzastella/AC-Server-Manager?style=flat-square"></a>
+  <img alt="Piattaforma" src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6?style=flat-square">
+  <img alt="Licenza" src="https://img.shields.io/github/license/terzastella/AC-Server-Manager?style=flat-square">
+  <img alt="Lingua" src="https://img.shields.io/badge/i18n-IT%20%7C%20EN-ff5a1f?style=flat-square">
 </p>
 
 ---
@@ -145,6 +152,26 @@ in compilazione. I messaggi generati dal backend Rust sono bilingui in
 Non vengono tradotti i dati di Assetto Corsa (nomi di auto, piste, livree), le
 chiavi dei file `.ini` e il contenuto dei log del server.
 
+## Sicurezza
+
+- Tutto gira in locale: nessuna telemetria, nessun servizio cloud, nessun account.
+- L'API delle prenotazioni è protetta da un token casuale incluso nel link d'invito,
+  ha un limite di richieste per IP ed espone solo ciò che serve al launcher
+  (informazioni sul server e prenotazione dello slot).
+- Password admin e token stanno in `settings.json` e `cfg/server_cfg.ini`, esclusi
+  dal repository.
+- L'API deve essere raggiungibile solo dai tuoi amici: tienila dentro la VPN, oppure
+  apri la porta deliberatamente.
+- Come segnalare un problema di sicurezza: [SECURITY.md](SECURITY.md).
+
+## Community
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) — come compilare, testare e proporre una modifica
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — Contributor Covenant 2.1
+- [SECURITY.md](SECURITY.md) — policy di sicurezza e segnalazioni
+- Bug e proposte: usa i template nella scheda Issues
+- Changelog: [CHANGELOG.md](CHANGELOG.md)
+
 ## Cosa non è nel repository
 
 Il repo contiene sorgenti, documentazione e immagini. Non contiene binari del gioco,
@@ -159,15 +186,14 @@ contenuti né configurazioni personali.
 
 Dopo un clone servono `acServer.exe` e i contenuti dalla propria installazione di
 Assetto Corsa; il resto lo crea il pannello. Gli eseguibili già compilati sono
-allegati alla release **v1.0.0**.
+allegati alla release più recente.
 
-## Privacy
+## Licenza
 
-- Nessuna telemetria, nessun servizio cloud: tutto gira in locale.
-- L'API del launcher ascolta in rete per permettere le prenotazioni, è protetta da
-  token e accetta richieste solo dagli indirizzi previsti.
-- Le credenziali admin del server e i token d'invito stanno in `settings.json` e
-  `cfg/server_cfg.ini`, che non vengono versionati.
+[MIT](LICENSE) © 2026 terzastella
+
+Assetto Corsa, Content Manager e i relativi contenuti appartengono ai rispettivi
+proprietari. Questo progetto non è affiliato a Kunos Simulazioni.
 
 ---
 

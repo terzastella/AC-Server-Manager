@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Sicurezza / Security
+    url: https://github.com/terzastella/AC-Server-Manager/security/advisories/new
+    about: Segnala una vulnerabilità in privato, non con una issue pubblica.
+  - name: Come contribuire / Contributing
+    url: https://github.com/terzastella/AC-Server-Manager/blob/main/CONTRIBUTING.md
+    about: Build, test e regole per le pull request.

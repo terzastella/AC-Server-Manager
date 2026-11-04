@@ -18,14 +18,19 @@ fn write_lock() -> &'static Mutex<()> {
     WRITE_LOCK.get_or_init(|| Mutex::new(()))
 }
 
-/// Limite per IP. Il launcher chiede una volta per invito salvato (fino a 8)
-/// a ogni aggiornamento: con 10/minuto bastava un refresh per ricevere 429.
-fn rate_ok(peer: &str, max: usize) -> bool {
-    let store = RATE.get_or_init(|| Mutex::new(HashMap::new()));
+/// Finestra del limite per IP.
+const RATE_WINDOW: Duration = Duration::from_secs(60);
+
+/// Logica pura del limite (testabile con un istante esplicito).
+fn rate_allowed(
+    store: &Mutex<HashMap<String, Vec<Instant>>>,
+    peer: &str,
+    max: usize,
+    now: Instant,
+) -> bool {
     let mut guard = store.lock().unwrap();
-    let now = Instant::now();
     let hits = guard.entry(peer.to_string()).or_default();
-    hits.retain(|at| now.duration_since(*at) < Duration::from_secs(60));
+    hits.retain(|at| now.duration_since(*at) < RATE_WINDOW);
     if hits.len() >= max {
         return false;
     }
@@ -33,9 +38,21 @@ fn rate_ok(peer: &str, max: usize) -> bool {
     true
 }
 
+/// Limite per IP. Il launcher chiede una volta per invito salvato (fino a 8)
+/// a ogni aggiornamento: con 10/minuto bastava un refresh per ricevere 429.
+fn rate_ok(peer: &str, max: usize) -> bool {
+    let store = RATE.get_or_init(|| Mutex::new(HashMap::new()));
+    rate_allowed(store, peer, max, Instant::now())
+}
+
+/// Confronto del token: un token vuoto non deve mai combaciare.
+fn token_matches(expected: &str, provided: &str) -> bool {
+    !expected.is_empty() && expected == provided
+}
+
 fn token_ok(state: &AppState, provided: &str) -> bool {
     let expected = state.settings.lock().unwrap().invite.token.clone();
-    !expected.is_empty() && expected == provided
+    token_matches(&expected, provided)
 }
 
 fn server_payload(state: &AppState) -> serde_json::Value {
@@ -89,31 +106,20 @@ fn server_payload(state: &AppState) -> serde_json::Value {
     })
 }
 
-fn reserve(state: &AppState, body: &serde_json::Value) -> Result<usize, String> {
-    let driver = body
-        .get("driver")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .trim()
-        .to_string();
-    let car = body
-        .get("car")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .trim()
-        .to_string();
-    let skin = body
-        .get("skin")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .trim()
-        .to_string();
-    let guid = body
-        .get("guid")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .trim()
-        .to_string();
+/// Legge e valida il corpo di `POST /api/reserve` (senza toccare i file).
+fn parse_reserve(body: &serde_json::Value) -> Result<Reservation, String> {
+    let field = |name: &str| {
+        body.get(name)
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string()
+    };
+    let driver = field("driver");
+    let car = field("car");
+    let skin = field("skin");
+    let guid = field("guid");
+
     if driver.is_empty() || car.is_empty() {
         return Err(messages::tr(
             "nome pilota e auto sono obbligatori",
@@ -126,6 +132,17 @@ fn reserve(state: &AppState, body: &serde_json::Value) -> Result<usize, String> 
             "Steam not detected: open Steam and retry, the slot is unusable without a GUID",
         ));
     }
+    Ok(Reservation {
+        driver,
+        car,
+        skin,
+        guid,
+    })
+}
+
+fn reserve(state: &AppState, body: &serde_json::Value) -> Result<usize, String> {
+    let reservation = parse_reserve(body)?;
+    let car = reservation.car.clone();
     let sections = commands::config_sections(state);
     let available = commands::used_cars(&sections);
     if !available.iter().any(|id| id.eq_ignore_ascii_case(&car)) {
@@ -142,22 +159,14 @@ fn reserve(state: &AppState, body: &serde_json::Value) -> Result<usize, String> 
     let path = state.cfg_dir().join("entry_list.ini");
     let base = std::fs::read_to_string(&path)
         .map_err(|error| format!("entry_list.ini non leggibile: {}", error))?;
-    let (text, slot) = apply_reservation(
-        &base,
-        cap,
-        &Reservation {
-            driver,
-            car,
-            skin,
-            guid,
-        },
-    )?;
+    let (text, slot) = apply_reservation(&base, cap, &reservation)?;
     commands::backup_cfg(state)?;
     std::fs::write(&path, text).map_err(|error| error.to_string())?;
     Ok(slot)
 }
 
-fn respond(stream: &mut TcpStream, status: u16, body: serde_json::Value) {
+/// Risposta HTTP completa, costruita senza socket (testabile).
+fn response_text(status: u16, body: &serde_json::Value) -> String {
     let reason = match status {
         200 => "OK",
         403 => "Forbidden",
@@ -165,14 +174,17 @@ fn respond(stream: &mut TcpStream, status: u16, body: serde_json::Value) {
         _ => "Bad Request",
     };
     let text = body.to_string();
-    let _ = write!(
-        stream,
+    format!(
         "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n{}",
         status,
         reason,
         text.len(),
         text
-    );
+    )
+}
+
+fn respond(stream: &mut TcpStream, status: u16, body: serde_json::Value) {
+    let _ = stream.write_all(response_text(status, &body).as_bytes());
 }
 
 fn handle(app: &AppHandle, mut stream: TcpStream) {
@@ -210,7 +222,7 @@ fn handle(app: &AppHandle, mut stream: TcpStream) {
         return respond(
             &mut stream,
             400,
-            json!({"ok": false, "error": "richiesta troppo grande"}),
+            json!({"ok": false, "error": messages::tr("richiesta troppo grande", "request too large")}),
         );
     }
     if length > 0 && reader.read_exact(&mut body).is_err() {
@@ -235,7 +247,7 @@ fn handle(app: &AppHandle, mut stream: TcpStream) {
                 return respond(
                     &mut stream,
                     429,
-                    json!({"ok": false, "error": "troppe richieste"}),
+                    json!({"ok": false, "error": messages::tr("troppe richieste", "too many requests")}),
                 );
             }
             if !token_ok(
@@ -248,7 +260,7 @@ fn handle(app: &AppHandle, mut stream: TcpStream) {
                 return respond(
                     &mut stream,
                     403,
-                    json!({"ok": false, "error": "token non valido"}),
+                    json!({"ok": false, "error": messages::tr("token non valido", "invalid token")}),
                 );
             }
             respond(&mut stream, 200, server_payload(&state));
@@ -258,7 +270,7 @@ fn handle(app: &AppHandle, mut stream: TcpStream) {
                 return respond(
                     &mut stream,
                     429,
-                    json!({"ok": false, "error": "troppe richieste"}),
+                    json!({"ok": false, "error": messages::tr("troppe richieste", "too many requests")}),
                 );
             }
             let parsed: serde_json::Value = serde_json::from_slice(&body).unwrap_or(json!({}));
@@ -270,7 +282,7 @@ fn handle(app: &AppHandle, mut stream: TcpStream) {
                 return respond(
                     &mut stream,
                     403,
-                    json!({"ok": false, "error": "token non valido"}),
+                    json!({"ok": false, "error": messages::tr("token non valido", "invalid token")}),
                 );
             }
             match reserve(&state, &parsed) {
@@ -284,7 +296,7 @@ fn handle(app: &AppHandle, mut stream: TcpStream) {
         _ => respond(
             &mut stream,
             400,
-            json!({"ok": false, "error": "endpoint sconosciuto"}),
+            json!({"ok": false, "error": messages::tr("endpoint sconosciuto", "unknown endpoint")}),
         ),
     }
 }
@@ -312,4 +324,97 @@ pub fn start(app: AppHandle, requested: u16) -> Result<u16, String> {
         &format!("nessuna porta API libera: {}", last_error),
         &format!("no free API port: {}", last_error),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn store() -> Mutex<HashMap<String, Vec<Instant>>> {
+        Mutex::new(HashMap::new())
+    }
+
+    #[test]
+    fn token_never_matches_when_empty() {
+        assert!(!token_matches("", ""));
+        assert!(!token_matches("", "abc"));
+        assert!(!token_matches("abc", ""));
+        assert!(!token_matches("abc", "abd"));
+        assert!(token_matches("abc", "abc"));
+    }
+
+    #[test]
+    fn reservation_requires_driver_and_car() {
+        let error = parse_reserve(&json!({"car": "bmw_z4_gt3", "guid": "76561198000000000"}))
+            .expect_err("driver mancante");
+        assert!(error.to_lowercase().contains("pilota") || error.to_lowercase().contains("driver"));
+
+        let error = parse_reserve(&json!({"driver": "Player", "guid": "76561198000000000"}))
+            .expect_err("car mancante");
+        assert!(error.to_lowercase().contains("auto") || error.to_lowercase().contains("car"));
+    }
+
+    #[test]
+    fn reservation_requires_numeric_steam_guid() {
+        let body = json!({"driver": "Player", "car": "bmw_z4_gt3", "guid": ""});
+        assert!(parse_reserve(&body).is_err());
+
+        let body = json!({"driver": "Player", "car": "bmw_z4_gt3", "guid": "abc123"});
+        assert!(parse_reserve(&body).is_err());
+
+        let body = json!({"driver": "Player", "car": "bmw_z4_gt3", "guid": "76561198000000000"});
+        let reservation = parse_reserve(&body).expect("payload valido");
+        assert_eq!(reservation.driver, "Player");
+        assert_eq!(reservation.car, "bmw_z4_gt3");
+        assert!(reservation.skin.is_empty());
+    }
+
+    #[test]
+    fn reservation_trims_values() {
+        let body = json!({
+            "driver": "  Player  ",
+            "car": " bmw_z4_gt3 ",
+            "skin": " one ",
+            "guid": " 76561198000000000 ",
+        });
+        let reservation = parse_reserve(&body).expect("payload valido");
+        assert_eq!(reservation.driver, "Player");
+        assert_eq!(reservation.car, "bmw_z4_gt3");
+        assert_eq!(reservation.skin, "one");
+        assert_eq!(reservation.guid, "76561198000000000");
+    }
+
+    #[test]
+    fn rate_limit_allows_then_blocks_then_recovers() {
+        let store = store();
+        let start = Instant::now();
+
+        for _ in 0..3 {
+            assert!(rate_allowed(&store, "10.0.0.1", 3, start));
+        }
+        assert!(!rate_allowed(&store, "10.0.0.1", 3, start));
+        // un altro IP ha il suo contatore
+        assert!(rate_allowed(&store, "10.0.0.2", 3, start));
+        // dopo la finestra si riparte
+        assert!(rate_allowed(
+            &store,
+            "10.0.0.1",
+            3,
+            start + RATE_WINDOW + Duration::from_secs(1)
+        ));
+    }
+
+    #[test]
+    fn response_has_status_and_content_length() {
+        let text = response_text(403, &json!({"ok": false, "error": "nope"}));
+        assert!(text.starts_with("HTTP/1.1 403 Forbidden\r\n"));
+        assert!(text.contains("Content-Type: application/json"));
+        let body = text.split("\r\n\r\n").nth(1).unwrap();
+        assert!(text.contains(&format!("Content-Length: {}", body.len())));
+        assert!(body.contains("nope"));
+
+        let too_many = response_text(429, &json!({"ok": false}));
+        assert!(too_many.starts_with("HTTP/1.1 429 Too Many Requests"));
+    }
 }

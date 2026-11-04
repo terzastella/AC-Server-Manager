@@ -4,7 +4,6 @@ on:
   push:
     tags:
       - "v*"
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -52,3 +51,4 @@ jobs:
             dist/ACLauncher.exe
             dist/SHA256SUMS.txt
           fail_on_unmatched_files: true
+          prerelease: ${{ contains(github.ref_name, '-rc') }}

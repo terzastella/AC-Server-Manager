@@ -49,8 +49,8 @@ class Boundary extends React.Component<{ children: React.ReactNode }, { error: s
       return (
         <div className="join-page">
           <div className="join-card join-error">
-            <h1>Qualcosa è andato storto</h1>
-            <p>Chiudi e riapri il launcher. Dettaglio: {this.state.error}</p>
+            <h1>Qualcosa è andato storto · Something went wrong</h1>
+            <p>Chiudi e riapri il launcher. Dettaglio · Close and reopen the launcher. Detail: {this.state.error}</p>
           </div>
         </div>
       );

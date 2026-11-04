@@ -134,45 +134,47 @@ export function Network() {
       </div>
 
       <div className="grid grid-2">
-        <Card title="Porte" subtitle="Stato locale delle porte usate dal server">
+        <Card title={t("network.portsTitle")} subtitle={t("network.portsSubtitle")}>
           <table className="table compact">
             <thead>
-              <tr><th>Porta</th><th>Proto</th><th>Stato</th></tr>
+              <tr><th>{t("network.colPort")}</th><th>{t("network.colProto")}</th><th>{t("network.colStatus")}</th></tr>
             </thead>
             <tbody>
               {ports.map((port) => (
                 <tr key={port.port}>
                   <td className="mono">{port.port}</td>
                   <td className="mono">TCP</td>
-                  <td>{port.tcp_free ? <Badge tone="green">libera</Badge> : <Badge tone="amber">in ascolto</Badge>}</td>
+                  <td>{port.tcp_free ? <Badge tone="green">{t("network.free")}</Badge> : <Badge tone="amber">{t("network.listening")}</Badge>}</td>
                 </tr>
               ))}
               {ports.map((port) => (
                 <tr key={`${port.port}-udp`}>
                   <td className="mono">{port.port}</td>
                   <td className="mono">UDP</td>
-                  <td>{port.udp_free ? <Badge tone="green">libera</Badge> : <Badge tone="amber">in ascolto</Badge>}</td>
+                  <td>{port.udp_free ? <Badge tone="green">{t("network.free")}</Badge> : <Badge tone="amber">{t("network.listening")}</Badge>}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <p className="muted small">Se il server è attivo, le porte risultano “in ascolto”: è normale.</p>
+          <p className="muted small">{t("network.portsNote")}</p>
         </Card>
 
-        <Card title="Firewall" subtitle="Apri UDP 9600, TCP 9600 e TCP 8081">
+        <Card title={t("network.firewallTitle")} subtitle={t("network.firewallSubtitle")}>
           <p className="muted">
-            Lo script <code>apri-porte-firewall.ps1</code> richiede i privilegi di amministratore. Windows mostrerà una conferma UAC.
+            {t("network.firewallHelpBefore")}
+            <code>apri-porte-firewall.ps1</code>
+            {t("network.firewallHelpAfter")}
           </p>
           <Button
             variant="primary"
             onClick={() =>
               void run("firewall", async () => {
                 await api.openFirewall();
-                notify("Richiesta UAC inviata", "info");
+                notify(t("network.uacSent"), "info");
               })
             }
           >
-            Apri porte con PowerShell
+            {t("network.openPorts")}
           </Button>
         </Card>
       </div>

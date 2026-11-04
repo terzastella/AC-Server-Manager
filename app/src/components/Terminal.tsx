@@ -1,4 +1,5 @@
 import { useRef, useEffect } from "react";
+import { useT } from "../i18n/core";
 import type { LogEntry } from "../types";
 
 function lineClass(message: string, stream: string): string {
@@ -17,6 +18,7 @@ export function Terminal({
   height?: number;
   follow?: boolean;
 }) {
+  const { t } = useT();
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -27,7 +29,7 @@ export function Terminal({
 
   return (
     <div className="terminal" ref={ref} style={{ maxHeight: height }}>
-      {lines.length === 0 && <div className="term-empty">Nessun output. Avvia il server per vedere i log.</div>}
+      {lines.length === 0 && <div className="term-empty">{t("ui.terminalEmpty")}</div>}
       {lines.map((line, index) => (
         <div className="term-line" key={`${index}-${line.ts}`}>
           <span className="term-ts">{line.ts}</span>

@@ -51,19 +51,23 @@ plain files (`cfg/*.ini`, `content/`, `logs/`) — no database, no external serv
 - Presets, automatic backups, logs of previous sessions
 - **Italian / English** interface, switchable on the fly
 
+## Demo
+
+![From the invite link to the race](docs/img/demo-en.gif)
+
 ## Screenshots
 
 | Manager · Content | Manager · Slots & cars |
 |---|---|
-| ![Content](docs/img/manager-content.png) | ![Slots](docs/img/manager-slots.png) |
+| ![Content](docs/img/manager-content-en.png) | ![Slots](docs/img/manager-slots-en.png) |
 
 | Manager · Configuration | Launcher · your servers |
 |---|---|
-| ![Configuration](docs/img/manager-config.png) | ![Launcher](docs/img/launcher-home.png) |
+| ![Configuration](docs/img/manager-config-en.png) | ![Launcher](docs/img/launcher-home-en.png) |
 
 **The join window** — friends pick car, skin and driver name, then go straight into the race:
 
-![Join window](docs/img/launcher-join.png)
+![Join window](docs/img/launcher-join-en.png)
 
 ## How it works
 

@@ -51,6 +51,10 @@ in file leggibili (`cfg/*.ini`, `content/`, `logs/`), senza database né servizi
 - Preset, backup automatici, log delle sessioni precedenti
 - Interfaccia **IT / EN** commutabile a caldo
 
+## Demo
+
+![Dal link d'invito alla partita](docs/img/demo-it.gif)
+
 ## Screenshot
 
 | Manager · Contenuti | Manager · Slot e auto |

@@ -336,9 +336,15 @@ pub fn ensure_content_link(root: &Path, entry: &ProfileEntry) -> Result<(), Stri
         }
         let _ = std::fs::remove_dir(&link);
     } else if link.exists() {
-        return Err(format!(
-            "il server ha una cartella content propria ({}): spostala o creane uno nuovo",
-            link.display()
+        return Err(messages::tr(
+            &format!(
+                "il server ha una cartella content propria ({}): spostala o creane uno nuovo",
+                link.display()
+            ),
+            &format!(
+                "this server has its own content folder ({}): move it or create a new server",
+                link.display()
+            ),
         ));
     }
 
@@ -360,9 +366,15 @@ pub fn ensure_content_link(root: &Path, entry: &ProfileEntry) -> Result<(), Stri
         command.creation_flags(CREATE_NO_WINDOW);
         let output = command.output().map_err(|error| error.to_string())?;
         if !output.status.success() {
-            return Err(format!(
-                "impossibile collegare i contenuti: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
+            return Err(messages::tr(
+                &format!(
+                    "impossibile collegare i contenuti: {}",
+                    String::from_utf8_lossy(&output.stderr).trim()
+                ),
+                &format!(
+                    "could not link the content: {}",
+                    String::from_utf8_lossy(&output.stderr).trim()
+                ),
             ));
         }
     }

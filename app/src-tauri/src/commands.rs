@@ -472,9 +472,15 @@ pub fn start_server(app: AppHandle, state: State<AppState>) -> Result<ServerStat
             .map(|pid| pid.to_string())
             .collect::<Vec<_>>()
             .join(", ");
-        return Err(format!(
-            "c'è già un server AC in esecuzione (PID {}), avviato fuori da questa app: fermalo prima di avviarne un altro.",
-            list
+        return Err(messages::tr(
+            &format!(
+                "c'è già un server AC in esecuzione (PID {}), avviato fuori da questa app: fermalo prima di avviarne un altro.",
+                list
+            ),
+            &format!(
+                "an AC server is already running (PID {}), started outside this app: stop it before starting another one.",
+                list
+            ),
         ));
     }
     let logs = state.server_dir().join("logs");
@@ -897,9 +903,9 @@ pub fn copy_content(state: State<AppState>, game_dir: String) -> Result<CopyRepo
     let tracks_root = content.join("tracks");
     let weather_root = content.join("weather");
     if !cars_root.is_dir() || !tracks_root.is_dir() {
-        return Err(format!(
-            "cartella content non valida: {}",
-            content.display()
+        return Err(messages::tr(
+            &format!("cartella content non valida: {}", content.display()),
+            &format!("invalid content folder: {}", content.display()),
         ));
     }
 

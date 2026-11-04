@@ -63,7 +63,7 @@ plain files (`cfg/*.ini`, `content/`, `logs/`) — no database, no external serv
 ## How it works
 
 ```text
-+- HOST PC ------------------------------------------------------+
+ +- HOST PC ------------------------------------------------------+
 |                                                                |
 |  +---------------------+              +---------------------+  |
 |  | ACServerControl.exe |              | acServer.exe        |  |

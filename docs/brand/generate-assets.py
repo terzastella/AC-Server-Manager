@@ -43,9 +43,7 @@ def main():
     manager = Image.open(os.path.join(HERE, "manager.png")).convert("RGBA")
     launcher = Image.open(os.path.join(HERE, "launcher.png")).convert("RGBA")
 
-    # badge dell'interfaccia (256 px, mostrati a 34-36 px)
-    rounded(256, manager).save(os.path.join(PUBLIC, "logo-manager.png"), optimize=True)
-    rounded(256, launcher).save(os.path.join(PUBLIC, "logo-launcher.png"), optimize=True)
+    # badge dell'interfaccia: li genera cutout.py (marchio senza riquadro)
 
     # icone degli eseguibili e di Tauri
     save_ico(manager, os.path.join(HERE, "logo-manager.ico"))

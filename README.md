@@ -1,7 +1,7 @@
 <p align="center">
-  <img src="docs/brand/mark-manager.png" width="92" alt="AC Server Control">
+  <img src="docs/brand/manager.png" width="92" alt="AC Server Control">
   &nbsp;&nbsp;&nbsp;
-  <img src="docs/brand/mark-launcher.png" width="92" alt="AC Launcher">
+  <img src="docs/brand/launcher.png" width="92" alt="AC Launcher">
 </p>
 
 <h1 align="center">AC Server Control</h1>

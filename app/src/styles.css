@@ -75,10 +75,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .brand { display: flex; align-items: center; gap: 11px; padding: 0 4px; }
 
 .brand-mark {
-  width: 38px; height: 38px;
+  width: 46px; height: auto;
   display: block;
   flex: none;
-  border-radius: 10px;
 }
 
 .brand-text { display: flex; flex-direction: column; line-height: 1.05; }
@@ -1158,11 +1157,10 @@ select { cursor: pointer; }
 .launcher-brand { display: flex; align-items: center; gap: 12px; }
 .launcher-head-tools { display: flex; align-items: center; gap: 14px; }
 .launcher-logo {
-  width: 40px;
-  height: 40px;
+  width: 52px;
+  height: auto;
   display: block;
   flex: none;
-  border-radius: 10px;
 }
 .launcher-brand strong { display: block; letter-spacing: 0.12em; font-size: 14px; }
 .launcher-brand span { font-size: 11px; color: var(--muted); letter-spacing: 0.18em; }

@@ -1,0 +1,51 @@
+# --- build e dipendenze ---
+app/node_modules/
+app/dist/
+app/src-tauri/target/
+app/src-tauri/gen/
+.vite/
+*.tsbuildinfo
+
+# --- eseguibili e binari del gioco ---
+# acServer*.exe e acServer appartengono ad Assetto Corsa: non vanno nel repo.
+*.exe
+*.dll
+*.pdb
+dist/
+acServer
+acServerManager.exe
+
+# --- dati locali del server ---
+content/
+system/
+cfg/
+profiles/
+backups/
+logs/
+manager/
+presets/
+results/
+setups/
+server-info.txt
+*.url
+
+# --- documenti e script personali (restano in locale, fuori da git) ---
+NOTES.md
+GUIDA-IMPOSTAZIONI.md
+PASSO-PASSO-AMICO.md
+per-gli-amici.txt
+*.bat
+prova-connessione.bat
+apri-porte-firewall.ps1
+crea-link-client.ps1
+copia-contenuti.ps1
+controlla-contenuti.ps1
+docs/superpowers/
+
+# --- tooling / sistema ---
+.superpowers/
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+*.log

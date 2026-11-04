@@ -21,9 +21,7 @@ pub fn decompress(input: &[u8]) -> Result<Vec<u8>, String> {
         }
 
         let mut length = control >> 5;
-        let mut reference = out
-            .len()
-            .wrapping_sub(((control & 0x1f) << 8) + 1);
+        let mut reference = out.len().wrapping_sub(((control & 0x1f) << 8) + 1);
 
         if length == 7 {
             if index >= input.len() {

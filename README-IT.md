@@ -17,6 +17,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/terzastella/AC-Server-Manager/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/terzastella/AC-Server-Manager/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/terzastella/AC-Server-Manager/releases/latest"><img alt="Ultima release" src="https://img.shields.io/github/v/release/terzastella/AC-Server-Manager?style=flat-square"></a>
   <img alt="Piattaforma" src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6?style=flat-square">
   <img alt="Licenza" src="https://img.shields.io/github/license/terzastella/AC-Server-Manager?style=flat-square">
@@ -52,13 +53,17 @@ in file leggibili (`cfg/*.ini`, `content/`, `logs/`), senza database né servizi
 
 ## Screenshot
 
-| Contenuti | Slot e auto |
+| Manager · Contenuti | Manager · Slot e auto |
 |---|---|
 | ![Contenuti](docs/img/manager-content.png) | ![Slot](docs/img/manager-slots.png) |
 
-| Configurazione | Launcher per gli amici |
+| Manager · Configurazione | Launcher · i tuoi server |
 |---|---|
 | ![Configurazione](docs/img/manager-config.png) | ![Launcher](docs/img/launcher-home.png) |
+
+**La finestra d'ingresso** — l'amico sceglie auto, livrea e nome, poi entra in partita:
+
+![Finestra d'ingresso](docs/img/launcher-join.png)
 
 ## Come funziona
 
@@ -111,6 +116,23 @@ richieste per IP.
 - *Opzionale*: Content Manager, letto in sola lettura per importare settings e preset
 - Per giocare in rete: Hamachi, Radmin VPN, ZeroTier, Tailscale o port forwarding
 
+## Download e integrità
+
+Gli eseguibili pronti sono allegati alla [release più recente](https://github.com/terzastella/AC-Server-Manager/releases/latest):
+`ACServerControl.exe`, `ACLauncher.exe` e `SHA256SUMS.txt`.
+
+```powershell
+# verifica del download
+Get-FileHash .\ACServerControl.exe -Algorithm SHA256
+Get-FileHash .\ACLauncher.exe -Algorithm SHA256
+# confronta con gli hash in SHA256SUMS.txt
+```
+
+Gli eseguibili **non sono firmati**, quindi al primo avvio Windows SmartScreen può
+mostrare un avviso ("Windows ha protetto il PC"): dopo aver controllato l'hash scegli
+*Ulteriori informazioni → Esegui comunque*. Il progetto non ha ancora un certificato
+di firma; il codice è pubblico e la build è riproducibile con `build.ps1`.
+
 ## Compilare da sorgente
 
 ```powershell
@@ -151,6 +173,20 @@ in compilazione. I messaggi generati dal backend Rust sono bilingui in
 
 Non vengono tradotti i dati di Assetto Corsa (nomi di auto, piste, livree), le
 chiavi dei file `.ini` e il contenuto dei log del server.
+
+## Limiti noti
+
+- **Le prenotazioni valgono dal prossimo avvio**: Assetto Corsa legge `entry_list.ini`
+  solo all'avvio, quindi una prenotazione fatta a server acceso ha effetto dopo un
+  riavvio (il pannello te lo dice).
+- **Il blocco dello slot è per nome pilota**, non un lock rigido sul GUID: due persone
+  con lo stesso nome si contenderebbero lo stesso slot.
+- **Content Manager è opzionale e in sola lettura**: l'import dei settings funziona, ma
+  nulla viene mai scritto su `Values.data`.
+- **I contenuti devono già esistere** sul server: l'app copia e verifica auto, piste e
+  meteo, ma non scarica mod.
+- **Solo Windows** (WebView2): nessuna build Linux o macOS.
+- **Nessuna firma del codice**, vedi *Download e integrità*.
 
 ## Sicurezza
 

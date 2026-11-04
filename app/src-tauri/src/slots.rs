@@ -1,5 +1,5 @@
-use crate::messages;
 use crate::ini::{self, Entry, Section};
+use crate::messages;
 
 #[derive(Clone, Debug, Default)]
 pub struct Reservation {
@@ -50,11 +50,20 @@ pub fn free_slot_count(text: &str) -> usize {
 
 fn sanitize(value: &str, label: &str, max: usize) -> Result<String, String> {
     let trimmed = value.trim();
-    if trimmed.chars().any(|c| c.is_control() || "[];=".contains(c)) {
-        return Err(messages::tr(&format!("{} contiene caratteri non ammessi", label), &format!("{} contains forbidden characters", label)));
+    if trimmed
+        .chars()
+        .any(|c| c.is_control() || "[];=".contains(c))
+    {
+        return Err(messages::tr(
+            &format!("{} contiene caratteri non ammessi", label),
+            &format!("{} contains forbidden characters", label),
+        ));
     }
     if trimmed.chars().count() > max {
-        return Err(messages::tr(&format!("{} troppo lungo (max {})", label, max), &format!("{} is too long (max {})", label, max)));
+        return Err(messages::tr(
+            &format!("{} troppo lungo (max {})", label, max),
+            &format!("{} is too long (max {})", label, max),
+        ));
     }
     Ok(trimmed.to_string())
 }
@@ -70,7 +79,10 @@ pub fn apply_reservation(
     let car = sanitize(&reservation.car, "auto", 64)?;
     let skin = sanitize(&reservation.skin, "livrea", 64)?;
     if driver.is_empty() || car.is_empty() {
-        return Err(messages::tr("nome pilota e auto sono obbligatori", "driver name and car are required"));
+        return Err(messages::tr(
+            "nome pilota e auto sono obbligatori",
+            "driver name and car are required",
+        ));
     }
 
     let mut sections = ini::parse(text).sections;
@@ -85,9 +97,10 @@ pub fn apply_reservation(
         .iter()
         .copied()
         .find(|index| entry_value(&sections[*index], "DRIVERNAME") == driver);
-    let same_car = car_positions.iter().copied().find(|index| {
-        is_free(&sections[*index]) && entry_value(&sections[*index], "MODEL") == car
-    });
+    let same_car = car_positions
+        .iter()
+        .copied()
+        .find(|index| is_free(&sections[*index]) && entry_value(&sections[*index], "MODEL") == car);
     let any_free = car_positions
         .iter()
         .copied()
@@ -97,7 +110,10 @@ pub fn apply_reservation(
         Some(index) => index,
         None => {
             if car_positions.len() >= cap && cap > 0 {
-                return Err(messages::tr("nessuno slot libero: MAX_CLIENTS raggiunto", "no free slot: MAX_CLIENTS reached"));
+                return Err(messages::tr(
+                    "nessuno slot libero: MAX_CLIENTS raggiunto",
+                    "no free slot: MAX_CLIENTS reached",
+                ));
             }
             let next = car_positions
                 .iter()
@@ -155,7 +171,8 @@ mod tests {
 
     #[test]
     fn reserves_existing_free_slot() {
-        let (out, slot) = apply_reservation(BASE, 4, &reservation("Luca", "bmw_z4_gt3", "one")).unwrap();
+        let (out, slot) =
+            apply_reservation(BASE, 4, &reservation("Luca", "bmw_z4_gt3", "one")).unwrap();
         assert_eq!(slot, 0);
         assert!(out.contains("; entry list"));
         assert!(out.contains("DRIVERNAME=Luca"));
@@ -166,7 +183,8 @@ mod tests {
     #[test]
     fn adds_slot_when_cap_allows() {
         let full = BASE.replace("DRIVERNAME=\r\nGUID=", "DRIVERNAME=Giulia\r\nGUID=xyz");
-        let (out, slot) = apply_reservation(&full, 4, &reservation("Luca", "bmw_z4_gt3", "one")).unwrap();
+        let (out, slot) =
+            apply_reservation(&full, 4, &reservation("Luca", "bmw_z4_gt3", "one")).unwrap();
         assert_eq!(slot, 2);
         assert!(out.contains("[CAR_2]"));
         assert!(out.contains("DRIVERNAME=Luca"));
@@ -199,8 +217,10 @@ mod tests {
 
     #[test]
     fn second_reservation_updates_same_slot() {
-        let (first, slot) = apply_reservation(BASE, 4, &reservation("Luca", "bmw_z4_gt3", "one")).unwrap();
-        let (second, again) = apply_reservation(&first, 4, &reservation("Luca", "bmw_z4_gt3", "two")).unwrap();
+        let (first, slot) =
+            apply_reservation(BASE, 4, &reservation("Luca", "bmw_z4_gt3", "one")).unwrap();
+        let (second, again) =
+            apply_reservation(&first, 4, &reservation("Luca", "bmw_z4_gt3", "two")).unwrap();
         assert_eq!(slot, again);
         assert_eq!(second.matches("DRIVERNAME=Luca").count(), 1);
         assert!(second.contains("SKIN=two"));

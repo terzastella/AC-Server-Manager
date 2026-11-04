@@ -93,7 +93,10 @@ pub fn parse_join_uri(uri: &str) -> Result<JoinArgs, String> {
     let trimmed = uri.trim();
     let lower = trimmed.to_lowercase();
     if !lower.starts_with("acservercontrol://") {
-        return Err(messages::tr("link non riconosciuto: serve acservercontrol://join?...", "unrecognised link: acservercontrol://join?... required"));
+        return Err(messages::tr(
+            "link non riconosciuto: serve acservercontrol://join?...",
+            "unrecognised link: acservercontrol://join?... required",
+        ));
     }
     let query = trimmed
         .split_once('?')
@@ -115,7 +118,10 @@ pub fn parse_join_uri(uri: &str) -> Result<JoinArgs, String> {
         .cloned()
         .ok_or_else(|| "parametro ip mancante".to_string())?;
     if !valid_host(&ip) {
-        return Err(messages::tr("parametro ip non valido", "invalid ip parameter"));
+        return Err(messages::tr(
+            "parametro ip non valido",
+            "invalid ip parameter",
+        ));
     }
     let http_port = map
         .get("httpport")
@@ -148,7 +154,7 @@ pub fn parse_join_uri(uri: &str) -> Result<JoinArgs, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-use crate::state::InviteSettings;
+    use crate::state::InviteSettings;
 
     #[test]
     fn token_has_32_alnum_chars() {

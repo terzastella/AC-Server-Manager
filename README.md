@@ -17,6 +17,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/terzastella/AC-Server-Manager/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/terzastella/AC-Server-Manager/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/terzastella/AC-Server-Manager/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/terzastella/AC-Server-Manager?style=flat-square"></a>
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6?style=flat-square">
   <img alt="License" src="https://img.shields.io/github/license/terzastella/AC-Server-Manager?style=flat-square">
@@ -52,13 +53,17 @@ plain files (`cfg/*.ini`, `content/`, `logs/`) — no database, no external serv
 
 ## Screenshots
 
-| Content | Slots & cars |
+| Manager · Content | Manager · Slots & cars |
 |---|---|
 | ![Content](docs/img/manager-content.png) | ![Slots](docs/img/manager-slots.png) |
 
-| Configuration | Launcher |
+| Manager · Configuration | Launcher · your servers |
 |---|---|
 | ![Configuration](docs/img/manager-config.png) | ![Launcher](docs/img/launcher-home.png) |
+
+**The join window** — friends pick car, skin and driver name, then go straight into the race:
+
+![Join window](docs/img/launcher-join.png)
 
 ## How it works
 
@@ -111,6 +116,23 @@ per-IP rate limiting.
 - *Optional*: Content Manager, read-only, to import settings and presets
 - To play over the internet: Hamachi, Radmin VPN, ZeroTier, Tailscale or port forwarding
 
+## Downloads and integrity
+
+Prebuilt executables are attached to the [latest release](https://github.com/terzastella/AC-Server-Manager/releases/latest):
+`ACServerControl.exe`, `ACLauncher.exe` and `SHA256SUMS.txt`.
+
+```powershell
+# verify the download
+Get-FileHash .\ACServerControl.exe -Algorithm SHA256
+Get-FileHash .\ACLauncher.exe -Algorithm SHA256
+# compare with the hashes in SHA256SUMS.txt
+```
+
+The executables are **not code-signed**, so the first launch may show a Windows
+SmartScreen warning ("Windows protected your PC"): choose *More info → Run anyway*
+after checking the hash. A code signing certificate is not available for this
+project yet; the source is public and the build is reproducible with `build.ps1`.
+
 ## Build from source
 
 ```powershell
@@ -150,6 +172,20 @@ produced by the Rust backend are bilingual in `app/src-tauri/src/messages.rs`.
 
 Assetto Corsa data (car, track and skin names), `.ini` keys and the server log
 content are intentionally not translated.
+
+## Known limitations
+
+- **Bookings apply from the next server start**: Assetto Corsa reads `entry_list.ini`
+  only at startup, so a booking made while the server is running takes effect after a
+  restart (the panel tells you).
+- **Slot locking is by driver name**, not a hard GUID lock: two people typing the same
+  name would fight over the same slot.
+- **Content Manager is optional and read-only**: importing settings works, but nothing
+  is ever written back to `Values.data`.
+- **Content must already exist** on the server: the app copies and checks cars, tracks
+  and weather, but never downloads mods.
+- **Windows only** (WebView2): no Linux or macOS build.
+- **No code signing** yet, see *Downloads and integrity*.
 
 ## Security
 

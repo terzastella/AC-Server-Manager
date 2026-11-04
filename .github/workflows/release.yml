@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build portable executables
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+
+      - name: Install dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Build both executables
+        working-directory: app
+        shell: pwsh
+        run: ./build.ps1
+
+      - name: Checksums
+        shell: pwsh
+        run: |
+          Get-FileHash dist/ACServerControl.exe -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  ACServerControl.exe" } | Set-Content dist/SHA256SUMS.txt
+          Get-FileHash dist/ACLauncher.exe -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  ACLauncher.exe" } | Add-Content dist/SHA256SUMS.txt
+          Get-Content dist/SHA256SUMS.txt
+
+      - name: Upload to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/ACServerControl.exe
+            dist/ACLauncher.exe
+            dist/SHA256SUMS.txt
+          fail_on_unmatched_files: true

@@ -190,13 +190,22 @@ mod tests {
             Section {
                 name: "SERVER".into(),
                 entries: vec![
-                    Entry { key: "NAME".into(), value: "New".into() },
-                    Entry { key: "PASSWORD".into(), value: "x".into() },
+                    Entry {
+                        key: "NAME".into(),
+                        value: "New".into(),
+                    },
+                    Entry {
+                        key: "PASSWORD".into(),
+                        value: "x".into(),
+                    },
                 ],
             },
             Section {
                 name: "RACE".into(),
-                entries: vec![Entry { key: "LAPS".into(), value: "8".into() }],
+                entries: vec![Entry {
+                    key: "LAPS".into(),
+                    value: "8".into(),
+                }],
             },
         ];
         let output = apply(base, &sections);

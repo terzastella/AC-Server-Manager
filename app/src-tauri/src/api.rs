@@ -6,8 +6,8 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::messages;
 use crate::commands;
+use crate::messages;
 use crate::slots::{apply_reservation, free_slot_count, Reservation};
 use crate::state::AppState;
 
@@ -48,10 +48,8 @@ fn server_payload(state: &AppState) -> serde_json::Value {
     let port = commands::section_value(&sections, "SERVER", "UDP_PORT")
         .and_then(|value| value.parse::<u16>().ok())
         .unwrap_or(9600);
-    let entry_text = std::fs::read_to_string(
-        state.cfg_dir().join("entry_list.ini"),
-    )
-    .unwrap_or_default();
+    let entry_text =
+        std::fs::read_to_string(state.cfg_dir().join("entry_list.ini")).unwrap_or_default();
     let library = commands::content_library_impl(state);
 
     let cars: Vec<serde_json::Value> = commands::used_cars(&sections)
@@ -92,20 +90,49 @@ fn server_payload(state: &AppState) -> serde_json::Value {
 }
 
 fn reserve(state: &AppState, body: &serde_json::Value) -> Result<usize, String> {
-    let driver = body.get("driver").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-    let car = body.get("car").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-    let skin = body.get("skin").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-    let guid = body.get("guid").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+    let driver = body
+        .get("driver")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let car = body
+        .get("car")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let skin = body
+        .get("skin")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let guid = body
+        .get("guid")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
     if driver.is_empty() || car.is_empty() {
-        return Err(messages::tr("nome pilota e auto sono obbligatori", "driver name and car are required"));
+        return Err(messages::tr(
+            "nome pilota e auto sono obbligatori",
+            "driver name and car are required",
+        ));
     }
     if guid.is_empty() || !guid.chars().all(|c| c.is_ascii_digit()) {
-        return Err(messages::tr("Steam non rilevato: apri Steam e riprova, senza GUID lo slot non è utilizzabile", "Steam not detected: open Steam and retry, the slot is unusable without a GUID"));
+        return Err(messages::tr(
+            "Steam non rilevato: apri Steam e riprova, senza GUID lo slot non è utilizzabile",
+            "Steam not detected: open Steam and retry, the slot is unusable without a GUID",
+        ));
     }
     let sections = commands::config_sections(state);
     let available = commands::used_cars(&sections);
     if !available.iter().any(|id| id.eq_ignore_ascii_case(&car)) {
-        return Err(messages::tr(&format!("auto non presente in CARS=: {}", car), &format!("car not in CARS=: {}", car)));
+        return Err(messages::tr(
+            &format!("auto non presente in CARS=: {}", car),
+            &format!("car not in CARS=: {}", car),
+        ));
     }
     let cap = commands::section_value(&sections, "SERVER", "MAX_CLIENTS")
         .and_then(|value| value.parse::<usize>().ok())
@@ -180,7 +207,11 @@ fn handle(app: &AppHandle, mut stream: TcpStream) {
     }
     let mut body = vec![0u8; length.min(8192)];
     if length > 8192 {
-        return respond(&mut stream, 400, json!({"ok": false, "error": "richiesta troppo grande"}));
+        return respond(
+            &mut stream,
+            400,
+            json!({"ok": false, "error": "richiesta troppo grande"}),
+        );
     }
     if length > 0 && reader.read_exact(&mut body).is_err() {
         return;
@@ -201,16 +232,34 @@ fn handle(app: &AppHandle, mut stream: TcpStream) {
     match (method.as_str(), path) {
         ("GET", "/api/server") => {
             if !rate_ok(&peer, 120) {
-                return respond(&mut stream, 429, json!({"ok": false, "error": "troppe richieste"}));
+                return respond(
+                    &mut stream,
+                    429,
+                    json!({"ok": false, "error": "troppe richieste"}),
+                );
             }
-            if !token_ok(&state, params.get("token").map(|value| value.as_str()).unwrap_or("")) {
-                return respond(&mut stream, 403, json!({"ok": false, "error": "token non valido"}));
+            if !token_ok(
+                &state,
+                params
+                    .get("token")
+                    .map(|value| value.as_str())
+                    .unwrap_or(""),
+            ) {
+                return respond(
+                    &mut stream,
+                    403,
+                    json!({"ok": false, "error": "token non valido"}),
+                );
             }
             respond(&mut stream, 200, server_payload(&state));
         }
         ("POST", "/api/reserve") => {
             if !rate_ok(&peer, 20) {
-                return respond(&mut stream, 429, json!({"ok": false, "error": "troppe richieste"}));
+                return respond(
+                    &mut stream,
+                    429,
+                    json!({"ok": false, "error": "troppe richieste"}),
+                );
             }
             let parsed: serde_json::Value = serde_json::from_slice(&body).unwrap_or(json!({}));
             let token = parsed
@@ -218,7 +267,11 @@ fn handle(app: &AppHandle, mut stream: TcpStream) {
                 .and_then(|value| value.as_str())
                 .unwrap_or("");
             if !token_ok(&state, token) {
-                return respond(&mut stream, 403, json!({"ok": false, "error": "token non valido"}));
+                return respond(
+                    &mut stream,
+                    403,
+                    json!({"ok": false, "error": "token non valido"}),
+                );
             }
             match reserve(&state, &parsed) {
                 Ok(slot) => {
@@ -228,7 +281,11 @@ fn handle(app: &AppHandle, mut stream: TcpStream) {
                 Err(error) => respond(&mut stream, 200, json!({"ok": false, "error": error})),
             }
         }
-        _ => respond(&mut stream, 400, json!({"ok": false, "error": "endpoint sconosciuto"})),
+        _ => respond(
+            &mut stream,
+            400,
+            json!({"ok": false, "error": "endpoint sconosciuto"}),
+        ),
     }
 }
 
@@ -251,5 +308,8 @@ pub fn start(app: AppHandle, requested: u16) -> Result<u16, String> {
             Err(error) => last_error = error.to_string(),
         }
     }
-    Err(messages::tr(&format!("nessuna porta API libera: {}", last_error), &format!("no free API port: {}", last_error)))
+    Err(messages::tr(
+        &format!("nessuna porta API libera: {}", last_error),
+        &format!("no free API port: {}", last_error),
+    ))
 }

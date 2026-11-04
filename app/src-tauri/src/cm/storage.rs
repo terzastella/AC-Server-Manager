@@ -1,6 +1,6 @@
+use crate::cm::lzf;
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path};
-use crate::cm::lzf;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CmSetting {
@@ -68,7 +68,8 @@ fn escape(text: &str) -> String {
 
 pub fn parse(bytes: &[u8]) -> Result<Vec<(String, String)>, String> {
     let decoded = decode_bytes(bytes)?;
-    let text = String::from_utf8(decoded).map_err(|error| format!("UTF-8 non valido: {}", error))?;
+    let text =
+        String::from_utf8(decoded).map_err(|error| format!("UTF-8 non valido: {}", error))?;
 
     let newline = text.find('\n').ok_or("header Values.data mancante")?;
     let header = &text[..newline];
@@ -141,14 +142,22 @@ fn kind_of(value: &str) -> &'static str {
 
 fn looks_encrypted(key: &str, value: &str) -> bool {
     let lower = key.to_lowercase();
-    let sensitive = ["password", "token", "secret", "credential", "apikey", "api_key", "auth"]
-        .iter()
-        .any(|needle| lower.contains(needle));
+    let sensitive = [
+        "password",
+        "token",
+        "secret",
+        "credential",
+        "apikey",
+        "api_key",
+        "auth",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle));
     sensitive
         && value.len() >= 32
-        && value
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '+' | '/' | '='))
+        && value.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '+' | '/' | '=')
+        })
 }
 
 pub fn settings_from(entries: &[(String, String)]) -> Vec<CmSetting> {
@@ -178,7 +187,10 @@ mod tests {
     #[test]
     fn roundtrip_with_escapes_and_unknown_keys() {
         let entries = vec![
-            ("Settings.DriveSettings.PlayerName".to_string(), "Driver".to_string()),
+            (
+                "Settings.DriveSettings.PlayerName".to_string(),
+                "Driver".to_string(),
+            ),
             ("chiave\\strana".to_string(), "valore\tcon\ntab".to_string()),
             ("sconosciuta".to_string(), "{\"a\":1}".to_string()),
         ];
@@ -198,7 +210,10 @@ mod tests {
         let settings = settings_from(&[
             ("A".into(), "1".into()),
             ("B".into(), "{\"x\":1}".into()),
-            ("Settings.OnlineSettings.ServerPassword".into(), "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo=".into()),
+            (
+                "Settings.OnlineSettings.ServerPassword".into(),
+                "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo=".into(),
+            ),
         ]);
         assert_eq!(settings[0].kind, "bool");
         assert_eq!(settings[1].kind, "json");

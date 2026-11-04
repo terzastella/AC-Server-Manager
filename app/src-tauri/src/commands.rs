@@ -1,6 +1,6 @@
 use crate::cm;
-use crate::messages;
 use crate::ini;
+use crate::messages;
 use crate::state::{AppState, LogEntry, Settings};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use serde::{Deserialize, Serialize};
@@ -154,7 +154,12 @@ pub fn save_settings(state: State<AppState>, settings: Settings) -> Result<(), S
 pub fn set_language(state: State<AppState>, language: String) -> Result<Settings, String> {
     let lang = match language.as_str() {
         "it" | "en" => language,
-        _ => return Err(messages::tr("lingua non supportata", "unsupported language")),
+        _ => {
+            return Err(messages::tr(
+                "lingua non supportata",
+                "unsupported language",
+            ))
+        }
     };
     {
         let mut settings = state.settings.lock().unwrap();
@@ -203,7 +208,10 @@ pub fn create_profile(
     name: String,
 ) -> Result<crate::profiles::ProfileIndex, String> {
     if server_running(&state) {
-        return Err(messages::tr("ferma il server prima di creare un profilo", "stop the server before creating a profile"));
+        return Err(messages::tr(
+            "ferma il server prima di creare un profilo",
+            "stop the server before creating a profile",
+        ));
     }
     let root = state.server_dir();
     let mut index = state.profiles.lock().unwrap();
@@ -228,7 +236,10 @@ pub fn import_profile(
     name: String,
 ) -> Result<crate::profiles::ProfileIndex, String> {
     if server_running(&state) {
-        return Err(messages::tr("ferma il server prima di importare un profilo", "stop the server before importing a profile"));
+        return Err(messages::tr(
+            "ferma il server prima di importare un profilo",
+            "stop the server before importing a profile",
+        ));
     }
     let folder = PathBuf::from(path.trim());
     if !folder.is_dir() {
@@ -239,7 +250,10 @@ pub fn import_profile(
     } else if folder.join("server_cfg.ini").is_file() {
         folder.clone()
     } else {
-        return Err(messages::tr("nella cartella non c'è cfg/server_cfg.ini", "cfg/server_cfg.ini not found in that folder"));
+        return Err(messages::tr(
+            "nella cartella non c'è cfg/server_cfg.ini",
+            "cfg/server_cfg.ini not found in that folder",
+        ));
     };
     let root = state.server_dir();
     let mut index = state.profiles.lock().unwrap();
@@ -255,7 +269,10 @@ pub fn duplicate_profile(
     id: String,
 ) -> Result<crate::profiles::ProfileIndex, String> {
     if server_running(&state) {
-        return Err(messages::tr("ferma il server prima di duplicare un profilo", "stop the server before duplicating a profile"));
+        return Err(messages::tr(
+            "ferma il server prima di duplicare un profilo",
+            "stop the server before duplicating a profile",
+        ));
     }
     let root = state.server_dir();
     let mut index = state.profiles.lock().unwrap();
@@ -282,7 +299,10 @@ pub fn delete_profile(
     id: String,
 ) -> Result<crate::profiles::ProfileIndex, String> {
     if server_running(&state) {
-        return Err(messages::tr("ferma il server prima di eliminare un profilo", "stop the server before deleting a profile"));
+        return Err(messages::tr(
+            "ferma il server prima di eliminare un profilo",
+            "stop the server before deleting a profile",
+        ));
     }
     let root = state.server_dir();
     let mut index = state.profiles.lock().unwrap();
@@ -297,12 +317,18 @@ pub fn set_active_profile(
     id: String,
 ) -> Result<crate::profiles::ProfileIndex, String> {
     if server_running(&state) {
-        return Err(messages::tr("ferma il server prima di cambiare profilo", "stop the server before switching profile"));
+        return Err(messages::tr(
+            "ferma il server prima di cambiare profilo",
+            "stop the server before switching profile",
+        ));
     }
     let root = state.server_dir();
     let mut index = state.profiles.lock().unwrap();
     if !index.profiles.iter().any(|entry| entry.id == id) {
-        return Err(messages::tr(&format!("server {} non trovato", id), &format!("server {} not found", id)));
+        return Err(messages::tr(
+            &format!("server {} non trovato", id),
+            &format!("server {} not found", id),
+        ));
     }
     index.active = id;
     crate::profiles::save(&root, &index)?;
@@ -459,7 +485,10 @@ pub fn start_server(app: AppHandle, state: State<AppState>) -> Result<ServerStat
     let dir = state.active_profile_dir();
     let exe = state.server_dir().join("acServer.exe");
     if !exe.is_file() {
-        return Err(messages::tr("acServer.exe non trovato nella cartella server", "acServer.exe not found in the server folder"));
+        return Err(messages::tr(
+            "acServer.exe non trovato nella cartella server",
+            "acServer.exe not found in the server folder",
+        ));
     }
     if !profile.legacy {
         crate::profiles::ensure_content_link(&state.server_dir(), &profile)?;
@@ -486,7 +515,11 @@ pub fn start_server(app: AppHandle, state: State<AppState>) -> Result<ServerStat
     let logs = state.server_dir().join("logs");
     fs::create_dir_all(&logs).map_err(|error| error.to_string())?;
     let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
-    let tag = if profile.slug.is_empty() { "default".to_string() } else { profile.slug.clone() };
+    let tag = if profile.slug.is_empty() {
+        "default".to_string()
+    } else {
+        profile.slug.clone()
+    };
     let log_path = logs.join(format!("acserver-{}-{}.log", tag, stamp));
     fs::write(&log_path, "").map_err(|error| error.to_string())?;
 
@@ -604,7 +637,10 @@ pub fn tail_log(state: State<AppState>, file: String, lines: usize) -> Result<St
         .map_err(|error| error.to_string())?;
     let logs_dir = logs_dir.canonicalize().unwrap_or(logs_dir);
     if !target.starts_with(&logs_dir) {
-        return Err(messages::tr("file fuori dalla cartella logs", "file outside the logs folder"));
+        return Err(messages::tr(
+            "file fuori dalla cartella logs",
+            "file outside the logs folder",
+        ));
     }
     let text = read_text(&target)?;
     let all: Vec<&str> = text.lines().collect();
@@ -618,7 +654,11 @@ pub(crate) fn backup_cfg(state: &AppState) -> Result<String, String> {
     let dir = state.server_dir();
     let profile = state.active_profile();
     let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
-    let tag = if profile.slug.is_empty() { "default".to_string() } else { profile.slug.clone() };
+    let tag = if profile.slug.is_empty() {
+        "default".to_string()
+    } else {
+        profile.slug.clone()
+    };
     let destination = dir.join("backups").join(format!("cfg-{}-{}", tag, stamp));
     fs::create_dir_all(&destination).map_err(|error| error.to_string())?;
     let source = state.cfg_dir();
@@ -642,10 +682,7 @@ pub fn read_config(state: State<AppState>) -> Result<ini::Doc, String> {
 }
 
 #[tauri::command]
-pub fn save_config(
-    state: State<AppState>,
-    sections: Vec<ini::Section>,
-) -> Result<String, String> {
+pub fn save_config(state: State<AppState>, sections: Vec<ini::Section>) -> Result<String, String> {
     let path = state.cfg_dir().join("server_cfg.ini");
     let base = read_text(&path)?;
     let backup = backup_cfg(&state).unwrap_or_default();
@@ -718,7 +755,10 @@ pub fn save_entry_list(state: State<AppState>, slots: Vec<CarSlot>) -> Result<St
         out.push_str(&format!("TEAM={}{}", slot.team, newline));
         out.push_str(&format!("MODEL={}{}", slot.model, newline));
         out.push_str(&format!("SKIN={}{}", slot.skin, newline));
-        out.push_str(&format!("SPECTATOR_MODE={}{}", slot.spectator_mode, newline));
+        out.push_str(&format!(
+            "SPECTATOR_MODE={}{}",
+            slot.spectator_mode, newline
+        ));
         out.push_str(&format!("GUID={}{}", slot.guid, newline));
         out.push_str(&format!("BALLAST={}{}", slot.ballast, newline));
         out.push_str(&format!("RESTRICTOR={}{}", slot.restrictor, newline));
@@ -829,7 +869,9 @@ fn build_report(state: &AppState) -> ContentReport {
             continue;
         }
         weather.push(WeatherInfo {
-            used: used_weather.iter().any(|item| item.eq_ignore_ascii_case(&id)),
+            used: used_weather
+                .iter()
+                .any(|item| item.eq_ignore_ascii_case(&id)),
             id,
         });
     }
@@ -840,7 +882,11 @@ fn build_report(state: &AppState) -> ContentReport {
         .cloned()
         .collect();
     let missing_tracks = if !used_track.is_empty()
-        && !dir.join("content").join("tracks").join(&used_track).is_dir()
+        && !dir
+            .join("content")
+            .join("tracks")
+            .join(&used_track)
+            .is_dir()
     {
         vec![used_track.clone()]
     } else {
@@ -848,7 +894,12 @@ fn build_report(state: &AppState) -> ContentReport {
     };
     let missing_weather = used_weather
         .iter()
-        .filter(|id| !dir.join("content").join("weather").join(id.as_str()).is_dir())
+        .filter(|id| {
+            !dir.join("content")
+                .join("weather")
+                .join(id.as_str())
+                .is_dir()
+        })
         .cloned()
         .collect();
 
@@ -930,11 +981,9 @@ pub fn copy_content(state: State<AppState>, game_dir: String) -> Result<CopyRepo
         }
         match copy_tree(&source, &destination) {
             Ok(()) => report.copied.push(dir_name(&destination)),
-            Err(error) => report.errors.push(format!(
-                "{}: {}",
-                dir_name(&destination),
-                error
-            )),
+            Err(error) => report
+                .errors
+                .push(format!("{}: {}", dir_name(&destination), error)),
         }
     };
 
@@ -1141,7 +1190,11 @@ fn build_library(state: &AppState) -> ContentLibrary {
         .map(|root| collect_dirs(&root.join("content").join("cars")))
         .unwrap_or_default();
 
-    let mut car_ids: Vec<String> = server_cars.keys().chain(game_cars.keys()).cloned().collect();
+    let mut car_ids: Vec<String> = server_cars
+        .keys()
+        .chain(game_cars.keys())
+        .cloned()
+        .collect();
     car_ids.sort();
     car_ids.dedup();
 
@@ -1169,7 +1222,11 @@ fn build_library(state: &AppState) -> ContentLibrary {
                 let skin_json = read_json(&skin_dir.join("ui_skin.json"));
                 let display = {
                     let value = json_text(&skin_json, "skinname");
-                    if value.is_empty() { name.clone() } else { value }
+                    if value.is_empty() {
+                        name.clone()
+                    } else {
+                        value
+                    }
                 };
                 let preview = first_existing(&[
                     skin_dir.join("preview.jpg"),
@@ -1212,8 +1269,14 @@ fn build_library(state: &AppState) -> ContentLibrary {
         skins.sort_by(|a, b| a.display.to_lowercase().cmp(&b.display.to_lowercase()));
 
         let badge = first_existing(&[
-            game_path.as_ref().map(|p| p.join("ui").join("badge.png")).unwrap_or_default(),
-            server_path.as_ref().map(|p| p.join("ui").join("badge.png")).unwrap_or_default(),
+            game_path
+                .as_ref()
+                .map(|p| p.join("ui").join("badge.png"))
+                .unwrap_or_default(),
+            server_path
+                .as_ref()
+                .map(|p| p.join("ui").join("badge.png"))
+                .unwrap_or_default(),
         ]);
         let preview = skins
             .iter()
@@ -1221,14 +1284,24 @@ fn build_library(state: &AppState) -> ContentLibrary {
             .or_else(|| badge.clone())
             .or_else(|| {
                 first_existing(&[
-                    game_path.as_ref().map(|p| p.join("ui").join("preview.jpg")).unwrap_or_default(),
-                    server_path.as_ref().map(|p| p.join("ui").join("preview.jpg")).unwrap_or_default(),
+                    game_path
+                        .as_ref()
+                        .map(|p| p.join("ui").join("preview.jpg"))
+                        .unwrap_or_default(),
+                    server_path
+                        .as_ref()
+                        .map(|p| p.join("ui").join("preview.jpg"))
+                        .unwrap_or_default(),
                 ])
             });
 
         cars.push(CarEntry {
             used: used.iter().any(|item| item.eq_ignore_ascii_case(&id)),
-            name: if json_text(&ui, "name").is_empty() { id.clone() } else { json_text(&ui, "name") },
+            name: if json_text(&ui, "name").is_empty() {
+                id.clone()
+            } else {
+                json_text(&ui, "name")
+            },
             brand: json_text(&ui, "brand"),
             class: json_text(&ui, "class"),
             tags: json_tags(&ui),
@@ -1249,8 +1322,11 @@ fn build_library(state: &AppState) -> ContentLibrary {
         .as_ref()
         .map(|root| collect_dirs(&root.join("content").join("tracks")))
         .unwrap_or_default();
-    let mut track_ids: Vec<String> =
-        server_tracks.keys().chain(game_tracks.keys()).cloned().collect();
+    let mut track_ids: Vec<String> = server_tracks
+        .keys()
+        .chain(game_tracks.keys())
+        .cloned()
+        .collect();
     track_ids.sort();
     track_ids.dedup();
 
@@ -1270,18 +1346,37 @@ fn build_library(state: &AppState) -> ContentLibrary {
             .unwrap_or(serde_json::Value::Null);
 
         let preview = first_existing(&[
-            game_path.as_ref().map(|p| p.join("ui").join("preview.png")).unwrap_or_default(),
-            game_path.as_ref().map(|p| p.join("ui").join("preview.jpg")).unwrap_or_default(),
-            server_path.as_ref().map(|p| p.join("ui").join("preview.png")).unwrap_or_default(),
+            game_path
+                .as_ref()
+                .map(|p| p.join("ui").join("preview.png"))
+                .unwrap_or_default(),
+            game_path
+                .as_ref()
+                .map(|p| p.join("ui").join("preview.jpg"))
+                .unwrap_or_default(),
+            server_path
+                .as_ref()
+                .map(|p| p.join("ui").join("preview.png"))
+                .unwrap_or_default(),
         ]);
         let outline = first_existing(&[
-            game_path.as_ref().map(|p| p.join("ui").join("outline.png")).unwrap_or_default(),
-            server_path.as_ref().map(|p| p.join("ui").join("outline.png")).unwrap_or_default(),
+            game_path
+                .as_ref()
+                .map(|p| p.join("ui").join("outline.png"))
+                .unwrap_or_default(),
+            server_path
+                .as_ref()
+                .map(|p| p.join("ui").join("outline.png"))
+                .unwrap_or_default(),
         ]);
 
         tracks.push(TrackEntry {
             used: id.eq_ignore_ascii_case(&used_track),
-            name: if json_text(&ui, "name").is_empty() { id.clone() } else { json_text(&ui, "name") },
+            name: if json_text(&ui, "name").is_empty() {
+                id.clone()
+            } else {
+                json_text(&ui, "name")
+            },
             country: json_text(&ui, "country"),
             city: json_text(&ui, "city"),
             length: json_text(&ui, "length"),
@@ -1328,7 +1423,10 @@ pub fn content_image(state: State<AppState>, path: String, width: u32) -> Result
             .map(|root| requested.starts_with(root))
             .unwrap_or(false);
     if !allowed {
-        return Err(messages::tr("immagine fuori dalle cartelle content", "image outside the content folders"));
+        return Err(messages::tr(
+            "immagine fuori dalle cartelle content",
+            "image outside the content folders",
+        ));
     }
 
     let width = width.clamp(64, 2000);
@@ -1426,7 +1524,11 @@ mod content_library_tests {
             "cars={} tracks={} con preview={}",
             library.cars.len(),
             library.tracks.len(),
-            library.cars.iter().filter(|car| car.preview.is_some()).count()
+            library
+                .cars
+                .iter()
+                .filter(|car| car.preview.is_some())
+                .count()
         );
         assert!(library.cars.len() > 100);
         assert!(library.tracks.len() > 10);
@@ -1649,7 +1751,10 @@ pub async fn server_info(port: u16) -> Result<serde_json::Value, String> {
 pub fn open_firewall(state: State<AppState>) -> Result<(), String> {
     let script = state.server_dir().join("apri-porte-firewall.ps1");
     if !script.is_file() {
-        return Err(messages::tr("apri-porte-firewall.ps1 non trovato", "apri-porte-firewall.ps1 not found"));
+        return Err(messages::tr(
+            "apri-porte-firewall.ps1 non trovato",
+            "apri-porte-firewall.ps1 not found",
+        ));
     }
     let path = script.to_string_lossy().replace('\'', "''");
     let command = format!(
@@ -1657,7 +1762,13 @@ pub fn open_firewall(state: State<AppState>) -> Result<(), String> {
         path
     );
     let mut process = Command::new("powershell");
-    process.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &command]);
+    process.args([
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        &command,
+    ]);
     #[cfg(windows)]
     process.creation_flags(CREATE_NO_WINDOW);
     process.spawn().map_err(|error| error.to_string())?;
@@ -1690,7 +1801,10 @@ pub fn open_url(url: String) -> Result<(), String> {
     if !allowed {
         return Err(messages::tr("URL non consentito", "URL not allowed"));
     }
-    if value.chars().any(|c| c.is_control() || c == '"' || c == '<' || c == '>') {
+    if value
+        .chars()
+        .any(|c| c.is_control() || c == '"' || c == '<' || c == '>')
+    {
         return Err(messages::tr("URL non valido", "invalid URL"));
     }
     #[cfg(windows)]
@@ -1781,10 +1895,7 @@ pub fn cm_scan(state: State<AppState>) -> CmScan {
 }
 
 #[tauri::command]
-pub fn cm_import_server_preset(
-    state: State<AppState>,
-    source: String,
-) -> Result<String, String> {
+pub fn cm_import_server_preset(state: State<AppState>, source: String) -> Result<String, String> {
     let destination_root = state.server_dir().join("presets");
     fs::create_dir_all(&destination_root).map_err(|error| error.to_string())?;
     let destination = cm::presets::import_server_preset(Path::new(&source), &destination_root)?;
@@ -1839,12 +1950,18 @@ pub fn save_preset(state: State<AppState>, name: String) -> Result<String, Strin
     let safe: String = name
         .chars()
         .filter(|character| {
-            character.is_alphanumeric() || *character == '_' || *character == '-' || *character == ' '
+            character.is_alphanumeric()
+                || *character == '_'
+                || *character == '-'
+                || *character == ' '
         })
         .collect();
     let safe = safe.trim().to_string();
     if safe.is_empty() {
-        return Err(messages::tr("nome preset non valido", "invalid preset name"));
+        return Err(messages::tr(
+            "nome preset non valido",
+            "invalid preset name",
+        ));
     }
     let destination = state.server_dir().join("presets").join(&safe);
     fs::create_dir_all(&destination).map_err(|error| error.to_string())?;
@@ -1862,7 +1979,10 @@ pub fn save_preset(state: State<AppState>, name: String) -> Result<String, Strin
 pub fn load_preset(state: State<AppState>, name: String) -> Result<(), String> {
     let directory = state.server_dir().join("presets").join(&name);
     if !directory.is_dir() {
-        return Err(messages::tr(&format!("preset {} non trovato", name), &format!("preset {} not found", name)));
+        return Err(messages::tr(
+            &format!("preset {} non trovato", name),
+            &format!("preset {} not found", name),
+        ));
     }
     backup_cfg(&state).ok();
     let destination = state.cfg_dir();
@@ -1915,14 +2035,20 @@ pub fn invite_settings(state: State<AppState>) -> InviteSettings {
 
 fn validate_invite(invite: &InviteSettings) -> Result<(), String> {
     if invite.api_port < 1024 {
-        return Err(messages::tr("la porta API deve essere almeno 1024", "the API port must be at least 1024"));
+        return Err(messages::tr(
+            "la porta API deve essere almeno 1024",
+            "the API port must be at least 1024",
+        ));
     }
     let accent = invite.accent.trim();
     let valid = accent.len() == 7
         && accent.starts_with('#')
         && accent[1..].chars().all(|c| c.is_ascii_hexdigit());
     if !valid {
-        return Err(messages::tr("colore accento non valido: usa #rrggbb", "invalid accent colour: use #rrggbb"));
+        return Err(messages::tr(
+            "colore accento non valido: usa #rrggbb",
+            "invalid accent colour: use #rrggbb",
+        ));
     }
     Ok(())
 }
@@ -2014,12 +2140,9 @@ pub fn add_invite(state: State<AppState>, link: String) -> Result<LauncherState,
         .iter()
         .any(|invite| invite.link == link)
     {
-        settings.saved_invites.insert(
-            0,
-            crate::state::SavedInvite {
-                link: link.clone(),
-            },
-        );
+        settings
+            .saved_invites
+            .insert(0, crate::state::SavedInvite { link: link.clone() });
         settings.saved_invites.truncate(20);
     }
     let snapshot = LauncherState {
@@ -2080,18 +2203,26 @@ pub async fn remote_server_info(
     token: String,
 ) -> Result<serde_json::Value, String> {
     if !crate::invite::valid_host(&host) {
-        return Err(messages::tr("indirizzo del server non valido", "invalid server address"));
+        return Err(messages::tr(
+            "indirizzo del server non valido",
+            "invalid server address",
+        ));
     }
     let url = format!("http://{}:{}/api/server?token={}", host, api_port, token);
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(4))
         .build()
         .map_err(|error| error.to_string())?;
-    let response = client.get(url).send().await.map_err(|error| {
-        format!("server non raggiungibile: {}", error)
-    })?;
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|error| format!("server non raggiungibile: {}", error))?;
     if response.status().as_u16() == 403 {
-        return Err(messages::tr("token non valido: chiedi un link aggiornato", "invalid token: ask for a fresh link"));
+        return Err(messages::tr(
+            "token non valido: chiedi un link aggiornato",
+            "invalid token: ask for a fresh link",
+        ));
     }
     let text = response.text().await.map_err(|error| error.to_string())?;
     serde_json::from_str(&text).map_err(|error| format!("risposta non valida: {}", error))
@@ -2108,7 +2239,10 @@ pub async fn remote_reserve(
     guid: String,
 ) -> Result<serde_json::Value, String> {
     if !crate::invite::valid_host(&host) {
-        return Err(messages::tr("indirizzo del server non valido", "invalid server address"));
+        return Err(messages::tr(
+            "indirizzo del server non valido",
+            "invalid server address",
+        ));
     }
     let url = format!("http://{}:{}/api/reserve", host, api_port);
     let client = reqwest::Client::builder()
@@ -2130,7 +2264,10 @@ pub async fn remote_reserve(
     let status = response.status().as_u16();
     let text = response.text().await.map_err(|error| error.to_string())?;
     if status == 403 {
-        return Err(messages::tr("token non valido: chiedi un link aggiornato", "invalid token: ask for a fresh link"));
+        return Err(messages::tr(
+            "token non valido: chiedi un link aggiornato",
+            "invalid token: ask for a fresh link",
+        ));
     }
     serde_json::from_str(&text).map_err(|error| format!("risposta non valida: {}", error))
 }
@@ -2214,7 +2351,10 @@ pub fn launch_game(
     server_name: String,
 ) -> Result<String, String> {
     if !crate::invite::valid_host(&ip) {
-        return Err(messages::tr("indirizzo del server non valido", "invalid server address"));
+        return Err(messages::tr(
+            "indirizzo del server non valido",
+            "invalid server address",
+        ));
     }
     let game_dir = {
         let configured = state.settings.lock().unwrap().game_dir.clone();
@@ -2230,9 +2370,8 @@ pub fn launch_game(
         "Assetto Corsa non trovato: imposta la cartella del gioco nelle Impostazioni".to_string()
     })?;
 
-    let cfg_dir = crate::assists::ac_cfg_dir().ok_or_else(|| {
-        "cartella Documenti\\Assetto Corsa non trovata".to_string()
-    })?;
+    let cfg_dir = crate::assists::ac_cfg_dir()
+        .ok_or_else(|| "cartella Documenti\\Assetto Corsa non trovata".to_string())?;
     std::fs::create_dir_all(&cfg_dir).map_err(|error| error.to_string())?;
     let path = cfg_dir.join("race.ini");
     let base = std::fs::read_to_string(&path).unwrap_or_default();
@@ -2260,11 +2399,7 @@ pub fn launch_game(
     set_values(
         &mut sections,
         "CAR_0",
-        &[
-            ("MODEL", car),
-            ("SKIN", skin),
-            ("DRIVER_NAME", name),
-        ],
+        &[("MODEL", car), ("SKIN", skin), ("DRIVER_NAME", name)],
     );
     let text = ini::apply(&base, &sections);
     std::fs::write(&path, text).map_err(|error| error.to_string())?;

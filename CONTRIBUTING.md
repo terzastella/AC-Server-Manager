@@ -23,12 +23,15 @@ npm run tauri dev
 ## Build and checks
 
 ```powershell
-# frontend type check
+# frontend: traduzioni, tipi, build
 cd app
+node scripts/check-i18n.mjs
 npx tsc --noEmit
+npm run build
 
-# Rust tests
+# Rust: formato e test
 cd app\src-tauri
+cargo fmt --check
 cargo test --lib
 
 # portable build -> dist\ACServerControl.exe + dist\ACLauncher.exe

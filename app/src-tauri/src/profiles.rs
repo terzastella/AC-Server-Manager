@@ -120,16 +120,25 @@ pub fn slugify(name: &str) -> String {
 pub fn validate_name(name: &str) -> Result<String, String> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
-        return Err(messages::tr("il nome del server non può essere vuoto", "server name cannot be empty"));
+        return Err(messages::tr(
+            "il nome del server non può essere vuoto",
+            "server name cannot be empty",
+        ));
     }
     if trimmed.chars().count() > 40 {
-        return Err(messages::tr("il nome del server è troppo lungo (max 40)", "server name is too long (max 40)"));
+        return Err(messages::tr(
+            "il nome del server è troppo lungo (max 40)",
+            "server name is too long (max 40)",
+        ));
     }
     if trimmed
         .chars()
         .any(|character| character.is_control() || "[];=".contains(character))
     {
-        return Err(messages::tr("il nome del server contiene caratteri non ammessi ([ ] ; =)", "server name contains forbidden characters ([ ] ; =)"));
+        return Err(messages::tr(
+            "il nome del server contiene caratteri non ammessi ([ ] ; =)",
+            "server name contains forbidden characters ([ ] ; =)",
+        ));
     }
     Ok(trimmed.to_string())
 }
@@ -193,7 +202,10 @@ pub fn import_from(
     name: &str,
 ) -> Result<ProfileEntry, String> {
     if !source_cfg.join("server_cfg.ini").is_file() {
-        return Err(messages::tr("nella cartella indicata non c'è server_cfg.ini", "server_cfg.ini not found in the selected folder"));
+        return Err(messages::tr(
+            "nella cartella indicata non c'è server_cfg.ini",
+            "server_cfg.ini not found in the selected folder",
+        ));
     }
     let display = if name.trim().is_empty() {
         server_name_from_cfg(source_cfg).unwrap_or_else(|| "Server importato".to_string())
@@ -256,11 +268,7 @@ fn make_profile(
     Ok(entry)
 }
 
-pub fn duplicate(
-    root: &Path,
-    index: &mut ProfileIndex,
-    id: &str,
-) -> Result<ProfileEntry, String> {
+pub fn duplicate(root: &Path, index: &mut ProfileIndex, id: &str) -> Result<ProfileEntry, String> {
     let source = index
         .profiles
         .iter()
@@ -268,12 +276,7 @@ pub fn duplicate(
         .cloned()
         .ok_or_else(|| format!("server {} non trovato", id))?;
     let base_name: String = source.name.chars().take(34).collect();
-    create(
-        root,
-        index,
-        &format!("{} copia", base_name.trim()),
-        &source,
-    )
+    create(root, index, &format!("{} copia", base_name.trim()), &source)
 }
 
 pub fn rename(index: &mut ProfileIndex, id: &str, name: &str) -> Result<ProfileEntry, String> {
@@ -295,10 +298,16 @@ pub fn delete(root: &Path, index: &mut ProfileIndex, id: &str) -> Result<(), Str
         .cloned()
         .ok_or_else(|| format!("server {} non trovato", id))?;
     if entry.legacy {
-        return Err(messages::tr("il server predefinito non può essere eliminato", "the default server cannot be deleted"));
+        return Err(messages::tr(
+            "il server predefinito non può essere eliminato",
+            "the default server cannot be deleted",
+        ));
     }
     if index.profiles.len() <= 1 {
-        return Err(messages::tr("deve restare almeno un server", "at least one server must remain"));
+        return Err(messages::tr(
+            "deve restare almeno un server",
+            "at least one server must remain",
+        ));
     }
     let source = profile_dir(root, &entry);
     let backups = root.join("backups").join("profiles");
@@ -325,7 +334,9 @@ pub fn ensure_content_link(root: &Path, entry: &ProfileEntry) -> Result<(), Stri
         let resolved = if existing.is_absolute() {
             existing
         } else {
-            link.parent().map(|dir| dir.join(&existing)).unwrap_or(existing)
+            link.parent()
+                .map(|dir| dir.join(&existing))
+                .unwrap_or(existing)
         };
         let same = match (resolved.canonicalize(), target.canonicalize()) {
             (Ok(left), Ok(right)) => left == right,
@@ -382,13 +393,19 @@ pub fn ensure_content_link(root: &Path, entry: &ProfileEntry) -> Result<(), Stri
     {
         let _ = &link;
         let _ = &target;
-        return Err(messages::tr("i profili con contenuti condivisi richiedono Windows", "profiles with shared content require Windows"));
+        return Err(messages::tr(
+            "i profili con contenuti condivisi richiedono Windows",
+            "profiles with shared content require Windows",
+        ));
     }
 
     if link.exists() {
         Ok(())
     } else {
-        Err(messages::tr("collegamento dei contenuti non creato", "content link not created"))
+        Err(messages::tr(
+            "collegamento dei contenuti non creato",
+            "content link not created",
+        ))
     }
 }
 
@@ -447,7 +464,11 @@ mod tests {
     fn creates_duplicates_renames_and_deletes() {
         let root = temp_root("crud");
         std::fs::create_dir_all(root.join("cfg")).unwrap();
-        std::fs::write(root.join("cfg").join("server_cfg.ini"), "[SERVER]\nNAME=Base\n").unwrap();
+        std::fs::write(
+            root.join("cfg").join("server_cfg.ini"),
+            "[SERVER]\nNAME=Base\n",
+        )
+        .unwrap();
         std::fs::create_dir_all(root.join("content").join("cars")).unwrap();
         let mut index = load(&root);
         let base = index.profiles[0].clone();
@@ -457,7 +478,11 @@ mod tests {
         assert!(created.id != "default");
         assert!(!created.legacy);
         assert!(cfg_dir(&root, &created).join("server_cfg.ini").is_file());
-        assert!(root.join("profiles").join("serata-gt3").join("content").exists());
+        assert!(root
+            .join("profiles")
+            .join("serata-gt3")
+            .join("content")
+            .exists());
 
         let copy = duplicate(&root, &mut index, &created.id).unwrap();
         assert_eq!(copy.name, "Serata GT3 copia");
@@ -521,7 +546,10 @@ mod tests {
         let entry = create(&root, &mut index, "Default", &base).unwrap();
         assert_ne!(entry.id, "default");
         assert!(!entry.legacy);
-        assert_eq!(index.profiles.iter().filter(|p| p.id == "default").count(), 1);
+        assert_eq!(
+            index.profiles.iter().filter(|p| p.id == "default").count(),
+            1
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -535,7 +563,10 @@ mod tests {
         )
         .unwrap();
         let index = load(&root);
-        assert!(index.profiles.iter().all(|p| p.legacy || !p.slug.is_empty()));
+        assert!(index
+            .profiles
+            .iter()
+            .all(|p| p.legacy || !p.slug.is_empty()));
         assert_eq!(index.profiles.len(), 1);
         let _ = std::fs::remove_dir_all(&root);
     }

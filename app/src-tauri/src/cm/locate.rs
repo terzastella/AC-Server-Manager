@@ -70,10 +70,9 @@ pub fn locate(custom: Option<&str>) -> CmLocation {
             location.ac_root = crate::cm::storage::find_value(&entries, "_ac_root");
             location.version =
                 crate::cm::storage::find_value(&entries, "AppUpdater:PreviousVersion");
-            if let Some(exe) = crate::cm::storage::find_value(
-                &entries,
-                "CustomUriSchemeHelper.RegisteredLocation",
-            ) {
+            if let Some(exe) =
+                crate::cm::storage::find_value(&entries, "CustomUriSchemeHelper.RegisteredLocation")
+            {
                 if Path::new(&exe).is_file() {
                     location.cm_exe = Some(exe);
                 }
@@ -98,7 +97,11 @@ mod tests {
             "Values.data non trovato: {:?}",
             location
         );
-        assert!(location.ac_root.is_some(), "AC root non letta: {:?}", location);
+        assert!(
+            location.ac_root.is_some(),
+            "AC root non letta: {:?}",
+            location
+        );
         assert!(!location.running);
     }
 }

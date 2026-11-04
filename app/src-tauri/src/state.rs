@@ -133,7 +133,8 @@ pub fn settings_path(exe: &Path) -> PathBuf {
         .join("settings.json")
 }
 
-pub fn load_settings(exe: &Path) -> Settings {    let path = settings_path(exe);
+pub fn load_settings(exe: &Path) -> Settings {
+    let path = settings_path(exe);
     if let Ok(text) = fs::read_to_string(path) {
         if let Ok(settings) = serde_json::from_str::<Settings>(&text) {
             return settings;

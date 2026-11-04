@@ -1,6 +1,9 @@
 use crate::ini;
 use serde::Serialize;
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CmServerPreset {
@@ -69,7 +72,11 @@ pub fn scan_server_presets(ac_root: &str) -> Vec<CmServerPreset> {
         let preview = if track.is_empty() {
             None
         } else {
-            let track_root = Path::new(ac_root).join("content").join("tracks").join(&track).join("ui");
+            let track_root = Path::new(ac_root)
+                .join("content")
+                .join("tracks")
+                .join(&track)
+                .join("ui");
             ["preview.png", "preview.jpg"]
                 .iter()
                 .map(|name| track_root.join(name))
@@ -165,9 +172,7 @@ pub fn import_server_preset(source: &Path, destination_root: &Path) -> Result<Pa
     if !source.is_dir() {
         return Err(format!("preset non trovato: {}", source.display()));
     }
-    let canonical = source
-        .canonicalize()
-        .map_err(|error| error.to_string())?;
+    let canonical = source.canonicalize().map_err(|error| error.to_string())?;
     let lowered = canonical.to_string_lossy().to_lowercase();
     if !lowered.contains("\\server\\presets\\") && !lowered.contains("/server/presets/") {
         return Err("il preset non proviene da una cartella server\\presets".into());

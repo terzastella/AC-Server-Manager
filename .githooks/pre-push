@@ -1,0 +1,25 @@
+#!/bin/sh
+# Blocca i push non fast-forward su main: vale come protezione locale del ramo
+# finche' la branch protection GitHub non e' disponibile (repo privata, piano Free).
+# Bypass voluto:  git push --no-verify
+zero="0000000000000000000000000000000000000000"
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+    [ "$remote_ref" = "refs/heads/main" ] || continue
+
+    # deletion of main
+    if [ "$local_sha" = "$zero" ]; then
+        echo "pre-push: cancellazione di main bloccata (usa --no-verify se sei sicuro)"
+        exit 1
+    fi
+
+    # brand new branch on the remote: nothing to protect yet
+    [ "$remote_sha" = "$zero" ] && continue
+
+    if ! git merge-base --is-ancestor "$remote_sha" "$local_sha"; then
+        echo "pre-push: force-push su main bloccato (usa --no-verify se sei sicuro)"
+        exit 1
+    fi
+done
+
+exit 0

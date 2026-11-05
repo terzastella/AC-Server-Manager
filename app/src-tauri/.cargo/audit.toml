@@ -1,0 +1,11 @@
+# Dipendenze presenti in Cargo.lock ma fuori dal grafo Windows:
+#   cargo tree -i <crate> --target x86_64-pc-windows-msvc  ->  nothing to print
+# Non finiscono negli exe distribuiti, quindi gli avvisi si possono ignorare.
+
+[advisories]
+ignore = [
+    # glib: catena GTK che Tauri usa solo su Linux. Non compilato per Windows.
+    "RUSTSEC-2024-0429",
+    # proc-macro-error: dipendenza di build, non presente nel binario finale.
+    "RUSTSEC-2024-0370",
+]

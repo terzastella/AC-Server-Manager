@@ -164,6 +164,7 @@ app/                     Tauri: React frontend (src/) and Rust backend (src-taur
   src-tauri/src/         commands, HTTP API, ini, profiles, slots, content, messages
 docs/brand/              logos (PNG/ICO) and the scripts that generate them
 docs/img/                screenshots used by the READMEs
+docs/release-notes/      release notes, one file per tag
 ```
 
 ## Internationalisation

@@ -43,9 +43,22 @@ jobs:
           Get-FileHash dist/ACLauncher.exe -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  ACLauncher.exe" } | Add-Content dist/SHA256SUMS.txt
           Get-Content dist/SHA256SUMS.txt
 
+      - name: Build release body
+        shell: pwsh
+        run: |
+          $notesPath = "docs/release-notes/${{ github.ref_name }}.md"
+          if (-not (Test-Path $notesPath)) { throw "note della release non trovate: $notesPath" }
+          $notes = [System.IO.File]::ReadAllText($notesPath, [System.Text.Encoding]::UTF8)
+          $sums = [System.IO.File]::ReadAllText("dist/SHA256SUMS.txt", [System.Text.Encoding]::ASCII).Trim()
+          if ($notes -notmatch [regex]::Escape("{{CHECKSUMS}}")) { throw "segnaposto {{CHECKSUMS}} assente nelle note" }
+          $body = $notes.Replace("{{CHECKSUMS}}", $sums)
+          [System.IO.File]::WriteAllText("dist/release-body.md", $body, (New-Object System.Text.UTF8Encoding($false)))
+          Get-Content dist/release-body.md -TotalCount 6
+
       - name: Upload to the release
         uses: softprops/action-gh-release@v2
         with:
+          body_path: dist/release-body.md
           files: |
             dist/ACServerControl.exe
             dist/ACLauncher.exe

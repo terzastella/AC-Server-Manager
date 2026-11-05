@@ -149,6 +149,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 ```
 
 Servono Node.js 20+, Rust stabile e Visual Studio Build Tools (C++).
+Lo script riscrive i percorsi di build, così i binari non contengono il tuo
+profilo utente (`C:\Users\<nome>\...`).
 
 Gli asset del brand si rigenerano con `python docs\brand\generate-assets.py` (icone)
 e `python docs\brand\cutout.py` (marchio senza sfondo per l'interfaccia).

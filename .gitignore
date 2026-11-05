@@ -52,3 +52,6 @@ desktop.ini
 
 # loghi sorgente (master puliti in docs/brand)
 logos/
+
+# tooling dell'agente (configurazione locale, non del progetto)
+.serena/

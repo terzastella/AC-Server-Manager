@@ -25,4 +25,9 @@ Prima release pubblica.
   e ingresso diretto in partita tramite `race.ini` (`[REMOTE]`).
 - Interfaccia italiana e inglese, commutabile a caldo.
 
+### Build
+
+- I binari non contengono più i percorsi assoluti della macchina di compilazione:
+  `build.ps1` riscrive il profilo utente in `/build` (`--remap-path-prefix`).
+
 [1.0.0]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.0

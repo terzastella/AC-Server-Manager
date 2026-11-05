@@ -12,6 +12,13 @@ if (Get-Process ACServerControl,ACLauncher -ErrorAction SilentlyContinue) {
     throw "ACServerControl.exe/ACLauncher.exe è in esecuzione: chiudilo prima di compilare."
 }
 
+# I path assoluti dei sorgenti (registry cargo) finiscono nei binari:
+# li riscriviamo per non esporre il nome utente di chi compila.
+$remap = "--remap-path-prefix=$env:USERPROFILE=/build"
+if ($env:RUSTFLAGS -notlike "*$remap*") {
+    $env:RUSTFLAGS = if ($env:RUSTFLAGS) { "$env:RUSTFLAGS $remap" } else { $remap }
+}
+
 $root = Split-Path -Parent $here
 $out = Join-Path $root "dist"
 $icons = Join-Path $here "src-tauri\icons\icon.ico"

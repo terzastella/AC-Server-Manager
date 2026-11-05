@@ -7,6 +7,20 @@ import { copyText } from "../utils";
 import { useT } from "../i18n/core";
 import type { InviteSettings } from "../types";
 
+/** Giorni residui arrotondati, per il selettore della scadenza. */
+function expiryDays(expiresAt: number | null): number {
+  if (!expiresAt) return 0;
+  const days = Math.round((expiresAt - Date.now() / 1000) / 86400);
+  if (days <= 1) return 1;
+  if (days <= 7) return 7;
+  if (days <= 30) return 30;
+  return 0;
+}
+
+function expiryFromDays(days: number): number | null {
+  return days > 0 ? Math.round(Date.now() / 1000) + days * 86400 : null;
+}
+
 export function Invite() {
   const { t } = useT();
   const { config, adapters, run, notify, refreshConfig } = useApp();
@@ -104,6 +118,34 @@ export function Invite() {
               readOnly
               title={t("invite.apiPortHint")}
             />
+          </label>
+          <label className="field">
+            <span className="field-label">{t("invite.bindLabel")}</span>
+            <select
+              value={draft.api_bind}
+              onChange={(event) => update({ api_bind: event.target.value })}
+              title={t("invite.bindHint")}
+            >
+              <option value="0.0.0.0">{t("invite.bindAll")}</option>
+              {adapters.map((adapter) => (
+                <option key={adapter.ip} value={adapter.ip}>
+                  {adapter.ip} ({adapter.name})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span className="field-label">{t("invite.expiryLabel")}</span>
+            <select
+              value={expiryDays(draft.expires_at)}
+              onChange={(event) => update({ expires_at: expiryFromDays(Number(event.target.value)) })}
+              title={t("invite.expiryHint")}
+            >
+              <option value={0}>{t("invite.expiryNever")}</option>
+              <option value={1}>{t("invite.expiry1")}</option>
+              <option value={7}>{t("invite.expiry7")}</option>
+              <option value={30}>{t("invite.expiry30")}</option>
+            </select>
           </label>
 
           <div className="row gap">

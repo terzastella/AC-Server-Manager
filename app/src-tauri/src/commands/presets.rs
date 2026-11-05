@@ -63,7 +63,8 @@ pub fn load_preset(state: State<AppState>, name: String) -> Result<(), String> {
             &format!("preset {} not found", name),
         ));
     }
-    backup_cfg(&state).ok();
+    // senza backup il preset non deve sovrascrivere la configurazione corrente
+    backup_cfg(&state)?;
     let destination = state.cfg_dir();
     for file in ["server_cfg.ini", "entry_list.ini", "welcome.txt"] {
         let from = directory.join(file);
@@ -97,6 +98,6 @@ pub fn list_backups(state: State<AppState>) -> Vec<BackupInfo> {
             path: path.to_string_lossy().to_string(),
         })
         .collect();
-    backups.sort_by(|a, b| b.modified.cmp(&a.modified));
+    backups.sort_by_key(|item| std::cmp::Reverse(item.modified));
     backups
 }

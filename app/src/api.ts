@@ -24,6 +24,7 @@ import type {
   LauncherState,
   Assists,
   AssistsState,
+  ExternalServer,
 } from "./types";
 export const api = {
   info: () => invoke<AppInfo>("app_info"),
@@ -48,6 +49,7 @@ export const api = {
   stop: () => invoke<ServerStatus>("stop_server"),
   restart: () => invoke<ServerStatus>("restart_server"),
   stopExternal: () => invoke<number>("stop_external_server"),
+  externalServers: () => invoke<ExternalServer[]>("external_servers"),
 
   logs: () => invoke<LogEntry[]>("get_logs"),
   clearLogs: () => invoke<void>("clear_logs"),

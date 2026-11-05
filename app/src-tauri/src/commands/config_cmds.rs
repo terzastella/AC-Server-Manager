@@ -14,9 +14,10 @@ pub fn read_config(state: State<AppState>) -> Result<ini::Doc, String> {
 pub fn save_config(state: State<AppState>, sections: Vec<ini::Section>) -> Result<String, String> {
     let path = state.cfg_dir().join("server_cfg.ini");
     let base = read_text(&path)?;
-    let backup = backup_cfg(&state).unwrap_or_default();
+    // senza backup il salvataggio non deve avvenire
+    let backup = backup_cfg(&state)?;
     let text = ini::apply(&base, &sections);
-    write_text(&path, &text)?;
+    write_text_atomic(&path, &text)?;
     Ok(backup)
 }
 
@@ -60,40 +61,87 @@ pub fn read_entry_list(state: State<AppState>) -> Result<Vec<CarSlot>, String> {
     Ok(slots)
 }
 
+fn slot_entries(slot: &CarSlot) -> Vec<ini::Entry> {
+    [
+        ("DRIVERNAME", slot.driver_name.clone()),
+        ("TEAM", slot.team.clone()),
+        ("MODEL", slot.model.clone()),
+        ("SKIN", slot.skin.clone()),
+        ("SPECTATOR_MODE", slot.spectator_mode.to_string()),
+        ("GUID", slot.guid.clone()),
+        ("BALLAST", slot.ballast.to_string()),
+        ("RESTRICTOR", slot.restrictor.to_string()),
+    ]
+    .into_iter()
+    .map(|(key, value)| ini::Entry {
+        key: key.to_string(),
+        value,
+    })
+    .collect()
+}
+
+/// Rimuove interi blocchi `[...]` con i nomi indicati, lasciando il resto com'è.
+fn remove_sections(text: &str, names: &[String]) -> String {
+    if names.is_empty() {
+        return text.to_string();
+    }
+    let mut out = String::new();
+    let mut skipping = false;
+    for raw in text.split_inclusive('\n') {
+        let line = raw.trim_end_matches('\n').trim_end_matches('\r');
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            let name = trimmed[1..trimmed.len() - 1].trim();
+            skipping = names.iter().any(|item| item.eq_ignore_ascii_case(name));
+            if skipping {
+                continue;
+            }
+        }
+        if !skipping {
+            out.push_str(raw);
+        }
+    }
+    out
+}
+
+/// Applica gli slot al file esistente: aggiorna solo le chiavi note, mantiene
+/// commenti, ordine e chiavi sconosciute, aggiunge o rimuove i blocchi necessari.
+pub(crate) fn apply_slots(base: &str, slots: &[CarSlot]) -> String {
+    let parsed = ini::parse(base);
+    let mut car_names: Vec<String> = Vec::new();
+    let mut model: Vec<ini::Section> = Vec::new();
+
+    for section in &parsed.sections {
+        if section.name.to_uppercase().starts_with("CAR_") {
+            car_names.push(section.name.clone());
+        } else {
+            model.push(section.clone());
+        }
+    }
+
+    for (index, slot) in slots.iter().enumerate() {
+        let name = car_names
+            .get(index)
+            .cloned()
+            .unwrap_or_else(|| format!("CAR_{}", index));
+        model.push(ini::Section {
+            name,
+            entries: slot_entries(slot),
+        });
+    }
+
+    let applied = ini::apply(base, &model);
+    let extra: Vec<String> = car_names.iter().skip(slots.len()).cloned().collect();
+    remove_sections(&applied, &extra)
+}
+
 #[tauri::command]
 pub fn save_entry_list(state: State<AppState>, slots: Vec<CarSlot>) -> Result<String, String> {
     let path = state.cfg_dir().join("entry_list.ini");
     let base = read_text(&path).unwrap_or_default();
-    let newline = if base.contains("\r\n") { "\r\n" } else { "\n" };
-    let backup = backup_cfg(&state).unwrap_or_default();
-
-    let mut out = String::new();
-    for line in base.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with('[') {
-            break;
-        }
-        if !trimmed.is_empty() {
-            out.push_str(line.trim_end_matches('\r'));
-            out.push_str(newline);
-        }
-    }
-    for (index, slot) in slots.iter().enumerate() {
-        out.push_str(&format!("[CAR_{}]{}", index, newline));
-        out.push_str(&format!("DRIVERNAME={}{}", slot.driver_name, newline));
-        out.push_str(&format!("TEAM={}{}", slot.team, newline));
-        out.push_str(&format!("MODEL={}{}", slot.model, newline));
-        out.push_str(&format!("SKIN={}{}", slot.skin, newline));
-        out.push_str(&format!(
-            "SPECTATOR_MODE={}{}",
-            slot.spectator_mode, newline
-        ));
-        out.push_str(&format!("GUID={}{}", slot.guid, newline));
-        out.push_str(&format!("BALLAST={}{}", slot.ballast, newline));
-        out.push_str(&format!("RESTRICTOR={}{}", slot.restrictor, newline));
-        out.push_str(newline);
-    }
-    write_text(&path, &out)?;
+    let backup = backup_cfg(&state)?;
+    let text = apply_slots(&base, &slots);
+    write_text_atomic(&path, &text)?;
     Ok(backup)
 }
 
@@ -104,7 +152,63 @@ pub fn read_welcome(state: State<AppState>) -> Result<String, String> {
 
 #[tauri::command]
 pub fn save_welcome(state: State<AppState>, text: String) -> Result<(), String> {
-    write_text(&state.cfg_dir().join("welcome.txt"), &text)
+    write_text_atomic(&state.cfg_dir().join("welcome.txt"), &text)
 }
 
-// ---------------------------------------------------------------- content
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn slot(driver: &str, model: &str) -> CarSlot {
+        CarSlot {
+            driver_name: driver.into(),
+            model: model.into(),
+            ..CarSlot::default()
+        }
+    }
+
+    #[test]
+    fn keeps_comments_and_unknown_keys() {
+        let base =
+            "; lista\r\n[CAR_0]\r\nMODEL=old\r\n; commento interno\r\nUNKNOWN=7\r\nDRIVERNAME=\r\n";
+        let out = apply_slots(base, &[slot("Luca", "new")]);
+        assert!(out.contains("; lista"));
+        assert!(out.contains("; commento interno"));
+        assert!(out.contains("UNKNOWN=7"));
+        assert!(out.contains("MODEL=new"));
+        assert!(out.contains("DRIVERNAME=Luca"));
+    }
+
+    #[test]
+    fn removes_extra_slots() {
+        let base = "[CAR_0]\nMODEL=a\n[CAR_1]\nMODEL=b\n[CAR_2]\nMODEL=c\n";
+        let out = apply_slots(base, &[slot("A", "a")]);
+        assert!(out.contains("[CAR_0]"));
+        assert!(!out.contains("[CAR_1]"));
+        assert!(!out.contains("[CAR_2]"));
+    }
+
+    #[test]
+    fn appends_missing_slots() {
+        let base = "[CAR_0]\nMODEL=a\n";
+        let out = apply_slots(base, &[slot("A", "a"), slot("B", "b")]);
+        assert!(out.contains("[CAR_1]"));
+        assert!(out.contains("DRIVERNAME=B"));
+    }
+
+    #[test]
+    fn keeps_crlf() {
+        let base = "[CAR_0]\r\nMODEL=a\r\n";
+        let out = apply_slots(base, &[slot("A", "a")]);
+        assert!(out.contains("\r\n"));
+    }
+
+    #[test]
+    fn empty_base_creates_slots() {
+        let out = apply_slots("", &[slot("A", "a"), slot("B", "b")]);
+        assert!(out.contains("[CAR_0]"));
+        assert!(out.contains("[CAR_1]"));
+        assert!(out.contains("DRIVERNAME=A"));
+        assert!(out.contains("DRIVERNAME=B"));
+    }
+}

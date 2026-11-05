@@ -68,6 +68,7 @@ fn set_values(sections: &mut Vec<ini::Section>, name: &str, pairs: &[(&str, Stri
 /// Scrive `race.ini` con la sezione `[REMOTE]` e avvia `acs.exe`: il gioco entra
 /// direttamente nel server, senza passare da Content Manager.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn launch_game(
     state: State<AppState>,
     ip: String,

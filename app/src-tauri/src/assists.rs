@@ -50,6 +50,7 @@ impl Default for Assists {
 }
 
 /// Chiavi del file, nell'ordine in cui vengono scritte.
+#[allow(clippy::type_complexity)]
 const KEYS: [(&str, fn(&Assists) -> u8); 12] = [
     ("IDEAL_LINE", |a| a.ideal_line as u8),
     ("AUTO_BLIP", |a| a.auto_blip as u8),

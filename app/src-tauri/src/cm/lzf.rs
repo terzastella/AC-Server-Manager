@@ -40,11 +40,12 @@ pub fn decompress(input: &[u8]) -> Result<Vec<u8>, String> {
             return Err("LZF: riferimento fuori range".into());
         }
 
-        for _ in 0..length + 2 {
-            let byte = out[reference];
+        let end = reference + length + 2;
+        for index in reference..end {
+            let byte = out[index];
             out.push(byte);
-            reference += 1;
         }
+        reference = end;
     }
 
     Ok(out)

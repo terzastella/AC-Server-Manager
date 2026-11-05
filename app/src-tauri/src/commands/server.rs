@@ -113,6 +113,49 @@ fn external_server_pids() -> Vec<u32> {
         .collect()
 }
 
+#[derive(Serialize)]
+pub struct ExternalServer {
+    pub pid: u32,
+    pub path: String,
+}
+
+/// Processi `acServer.exe` avviati fuori da questa app, con il percorso
+/// dell'eseguibile: l'interfaccia li mostra prima di terminare qualcosa.
+#[tauri::command]
+pub fn external_servers() -> Vec<ExternalServer> {
+    let pids = external_server_pids();
+    if pids.is_empty() {
+        return Vec::new();
+    }
+    let mut paths: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
+    #[cfg(windows)]
+    {
+        let mut command = Command::new("powershell");
+        command.args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Get-Process acServer -ErrorAction SilentlyContinue | ForEach-Object { \"$($_.Id)|$($_.Path)\" }",
+        ]);
+        command.creation_flags(CREATE_NO_WINDOW);
+        if let Ok(output) = command.output() {
+            for line in String::from_utf8_lossy(&output.stdout).lines() {
+                if let Some((pid, path)) = line.split_once('|') {
+                    if let Ok(pid) = pid.trim().parse::<u32>() {
+                        paths.insert(pid, path.trim().to_string());
+                    }
+                }
+            }
+        }
+    }
+    pids.into_iter()
+        .map(|pid| ExternalServer {
+            pid,
+            path: paths.remove(&pid).unwrap_or_default(),
+        })
+        .collect()
+}
+
 #[tauri::command]
 pub fn stop_external_server() -> Result<usize, String> {
     let pids = external_server_pids();
@@ -288,7 +331,7 @@ pub fn list_logs(state: State<AppState>) -> Vec<LogFile> {
             });
         }
     }
-    files.sort_by(|a, b| b.modified.cmp(&a.modified));
+    files.sort_by_key(|item| std::cmp::Reverse(item.modified));
     files
 }
 

@@ -28,6 +28,12 @@ fn validate_invite(invite: &InviteSettings) -> Result<(), String> {
             "invalid accent colour: use #rrggbb",
         ));
     }
+    if invite.api_bind.parse::<std::net::IpAddr>().is_err() {
+        return Err(messages::tr(
+            "indirizzo di ascolto dell'API non valido",
+            "invalid API bind address",
+        ));
+    }
     Ok(())
 }
 

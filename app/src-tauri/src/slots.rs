@@ -93,10 +93,12 @@ pub fn apply_reservation(
         .map(|(index, _)| index)
         .collect();
 
-    let already = car_positions
-        .iter()
-        .copied()
-        .find(|index| entry_value(&sections[*index], "DRIVERNAME") == driver);
+    let already = car_positions.iter().copied().find(|index| {
+        let section = &sections[*index];
+        entry_value(section, "DRIVERNAME") == driver
+            || (!reservation.guid.trim().is_empty()
+                && entry_value(section, "GUID").eq_ignore_ascii_case(reservation.guid.trim()))
+    });
     let same_car = car_positions
         .iter()
         .copied()
@@ -139,7 +141,7 @@ pub fn apply_reservation(
     set_entry(section, "DRIVERNAME", &driver);
     set_entry(section, "MODEL", &car);
     set_entry(section, "SKIN", &skin);
-    set_entry(section, "GUID", &reservation.guid.trim());
+    set_entry(section, "GUID", reservation.guid.trim());
 
     let position = car_positions
         .iter()
@@ -224,6 +226,22 @@ mod tests {
         assert_eq!(slot, again);
         assert_eq!(second.matches("DRIVERNAME=Luca").count(), 1);
         assert!(second.contains("SKIN=two"));
+    }
+
+    #[test]
+    fn same_steam_id_reuses_its_slot() {
+        let mut first = reservation("Luca", "bmw_z4_gt3", "one");
+        first.guid = "76561198000000001".into();
+        let (text, slot) = apply_reservation(BASE, 4, &first).unwrap();
+
+        // stesso SteamID, nome diverso: deve riusare lo slot, non crearne un altro
+        let mut second = reservation("Luca2", "ferrari_458", "two");
+        second.guid = "76561198000000001".into();
+        let (text2, again) = apply_reservation(&text, 4, &second).unwrap();
+
+        assert_eq!(slot, again);
+        assert_eq!(text2.matches("GUID=76561198000000001").count(), 1);
+        assert_eq!(text2.matches("DRIVERNAME=").count(), 2); // slot 0 + slot 1 (Mario)
     }
 
     #[test]

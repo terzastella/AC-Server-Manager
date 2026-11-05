@@ -400,7 +400,7 @@ fn build_library(state: &AppState) -> ContentLibrary {
         detected.map(PathBuf::from)
     };
 
-    let sections = config_sections(&state);
+    let sections = config_sections(state);
     let used = used_cars(&sections);
     let used_track = section_value(&sections, "SERVER", "TRACK").unwrap_or_default();
 
@@ -486,7 +486,7 @@ fn build_library(state: &AppState) -> ContentLibrary {
             }
         }
         let mut skins: Vec<SkinEntry> = skin_map.into_values().collect();
-        skins.sort_by(|a, b| a.display.to_lowercase().cmp(&b.display.to_lowercase()));
+        skins.sort_by_key(|item| item.display.to_lowercase());
 
         let badge = first_existing(&[
             game_path

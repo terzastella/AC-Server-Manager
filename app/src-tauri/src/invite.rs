@@ -13,22 +13,16 @@ pub struct JoinArgs {
     pub banner: String,
 }
 
+/// Token casuale da un CSPRNG: 32 byte in base64 url-safe senza padding.
+/// Se il generatore di sistema fallisce restituisce una stringa vuota: un
+/// token vuoto non combacia mai e l'API risponde 403 a chiunque.
 pub fn new_token() -> String {
-    const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-    let mut state = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|value| value.as_nanos() as u64)
-        .unwrap_or(0x9E37_79B9_7F4A_7C15)
-        ^ (std::process::id() as u64).wrapping_mul(0x2545_F491_4F6C_DD1D)
-        ^ (&ALPHABET as *const _ as u64).rotate_left(17);
-    let mut out = String::with_capacity(32);
-    while out.len() < 32 {
-        state ^= state << 13;
-        state ^= state >> 7;
-        state ^= state << 17;
-        out.push(ALPHABET[(state % ALPHABET.len() as u64) as usize] as char);
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+    let mut bytes = [0u8; 32];
+    match getrandom::getrandom(&mut bytes) {
+        Ok(()) => URL_SAFE_NO_PAD.encode(bytes),
+        Err(_) => String::new(),
     }
-    out
 }
 
 fn encode(value: &str) -> String {
@@ -157,10 +151,21 @@ mod tests {
     use crate::state::InviteSettings;
 
     #[test]
-    fn token_has_32_alnum_chars() {
+    fn token_is_random_base64url() {
         let token = new_token();
-        assert_eq!(token.len(), 32);
-        assert!(token.chars().all(|c| c.is_ascii_alphanumeric()));
+        // 32 byte -> 43 caratteri base64url senza padding
+        assert_eq!(token.len(), 43);
+        assert!(token
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
+    }
+
+    #[test]
+    fn tokens_do_not_repeat() {
+        let first = new_token();
+        let second = new_token();
+        assert_ne!(first, second);
+        assert!(!first.is_empty());
     }
 
     #[test]
@@ -171,6 +176,8 @@ mod tests {
             accent: "#00aaff".into(),
             banner: "https://x/y.jpg".into(),
             api_port: 8082,
+            api_bind: "0.0.0.0".into(),
+            expires_at: None,
         };
         let link = build_link("203.0.113.10", 8081, &invite);
         assert_eq!(
@@ -187,6 +194,8 @@ mod tests {
             accent: "#ff5a1f".into(),
             banner: String::new(),
             api_port: 8082,
+            api_bind: "0.0.0.0".into(),
+            expires_at: None,
         };
         let link = build_link("203.0.113.10", 8081, &invite);
         let args = parse_join_uri(&link).expect("link valido");

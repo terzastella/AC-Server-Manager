@@ -33,6 +33,29 @@ pub(crate) fn write_text(path: &Path, text: &str) -> Result<(), String> {
     fs::write(path, text).map_err(|error| format!("{}: {}", path.display(), error))
 }
 
+/// Scrittura atomica: file temporaneo, rilettura di controllo, poi rename.
+/// Se qualcosa fallisce il file originale resta intatto.
+pub(crate) fn write_text_atomic(path: &Path, text: &str) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let temp = path.with_extension("ini.tmp");
+    fs::write(&temp, text).map_err(|error| format!("{}: {}", temp.display(), error))?;
+    let written =
+        fs::read_to_string(&temp).map_err(|error| format!("{}: {}", temp.display(), error))?;
+    if written != text {
+        let _ = fs::remove_file(&temp);
+        return Err(messages::tr(
+            "scrittura incompleta: il file originale non è stato modificato",
+            "incomplete write: the original file was left untouched",
+        ));
+    }
+    fs::rename(&temp, path).map_err(|error| {
+        let _ = fs::remove_file(&temp);
+        format!("{}: {}", path.display(), error)
+    })
+}
+
 pub(crate) fn config_sections(state: &AppState) -> Vec<ini::Section> {
     let path = state.cfg_dir().join("server_cfg.ini");
     fs::read_to_string(path)

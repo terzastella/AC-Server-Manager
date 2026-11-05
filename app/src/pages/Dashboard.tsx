@@ -6,7 +6,7 @@ import { Terminal } from "../components/Terminal";
 import { QrCode } from "../components/QrCode";
 import { useT } from "../i18n/core";
 import { copyText, fmtUptime } from "../utils";
-import type { PortState } from "../types";
+import type { ExternalServer, PortState } from "../types";
 
 const SESSIONS = [
   "dashboard.sessionPractice",
@@ -44,6 +44,7 @@ export function Dashboard() {
   const [serverInfo, setServerInfo] = useState<Record<string, unknown> | null>(null);
   const [ports, setPorts] = useState<PortState[]>([]);
   const [external, setExternal] = useState(false);
+  const [externals, setExternals] = useState<ExternalServer[]>([]);
 
   const running = status?.running ?? false;
   const httpPort = useMemo(() => {
@@ -179,6 +180,10 @@ export function Dashboard() {
                       String(problem).toLowerCase().includes("already")
                     ) {
                       setExternal(true);
+                      void api
+                        .externalServers()
+                        .then(setExternals)
+                        .catch(() => setExternals([]));
                     }
                     throw problem;
                   }
@@ -210,6 +215,15 @@ export function Dashboard() {
         <div className="banner banner-amber">
           <strong>{t("dashboard.externalTitle")}</strong>
           <span>{t("dashboard.externalText")}</span>
+          {externals.length > 0 && (
+            <ul className="external-list">
+              {externals.map((item) => (
+                <li key={item.pid}>
+                  PID {item.pid} — {item.path || t("dashboard.externalUnknownPath")}
+                </li>
+              ))}
+            </ul>
+          )}
           <Button
             variant="danger"
             onClick={() =>

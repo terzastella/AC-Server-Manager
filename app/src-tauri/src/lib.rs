@@ -155,7 +155,7 @@ pub fn run() {
             image_cache: Mutex::new(std::collections::HashMap::new()),
             library_cache: Mutex::new(None),
             join_uri: Mutex::new(join_argument()),
-            launcher_mode: launcher_mode,
+            launcher_mode,
             profiles: Mutex::new(state::load_profiles(&server_dir)),
         })
         .setup(|app| {
@@ -164,8 +164,11 @@ pub fn run() {
             }
             let state = app.state::<AppState>();
             if !state.launcher_mode {
-                let port = state.settings.lock().unwrap().invite.api_port;
-                match api::start(app.handle().clone(), port) {
+                let (port, bind) = {
+                    let settings = state.settings.lock().unwrap();
+                    (settings.invite.api_port, settings.invite.api_bind.clone())
+                };
+                match api::start(app.handle().clone(), port, &bind) {
                     Ok(bound) => {
                         if bound != port {
                             eprintln!("porta API {} occupata: uso {}", port, bound);
@@ -210,6 +213,7 @@ pub fn run() {
             commands::stop_server,
             commands::restart_server,
             commands::stop_external_server,
+            commands::external_servers,
             commands::get_logs,
             commands::clear_logs,
             commands::list_logs,

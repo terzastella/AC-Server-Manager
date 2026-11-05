@@ -16,6 +16,10 @@ pub struct InviteSettings {
     pub accent: String,
     pub banner: String,
     pub api_port: u16,
+    /// Interfaccia su cui ascolta l'API: "0.0.0.0" = tutte.
+    pub api_bind: String,
+    /// Scadenza dell'invito (secondi Unix). `None` = nessuna scadenza.
+    pub expires_at: Option<i64>,
 }
 
 impl Default for InviteSettings {
@@ -26,6 +30,8 @@ impl Default for InviteSettings {
             accent: "#ff5a1f".into(),
             banner: String::new(),
             api_port: 8082,
+            api_bind: "0.0.0.0".into(),
+            expires_at: None,
         }
     }
 }
@@ -136,7 +142,10 @@ pub fn settings_path(exe: &Path) -> PathBuf {
 pub fn load_settings(exe: &Path) -> Settings {
     let path = settings_path(exe);
     if let Ok(text) = fs::read_to_string(path) {
-        if let Ok(settings) = serde_json::from_str::<Settings>(&text) {
+        // alcuni editor salvano con BOM: senza toglierlo il parsing fallisce
+        // e l'app ripartirebbe dai valori di fabbrica perdendo le impostazioni.
+        let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
+        if let Ok(settings) = serde_json::from_str::<Settings>(text) {
             return settings;
         }
     }

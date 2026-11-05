@@ -4,6 +4,29 @@ Le modifiche importanti del progetto. Formato basato su
 [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni
 [SemVer](https://semver.org/lang/it/).
 
+## [1.0.1] - 2026-11-06
+
+Release di sicurezza e integrità: nessuna funzione nuova.
+
+### Sicurezza
+
+- Token d'invito da CSPRNG (32 byte, base64url) al posto di tempo e PID.
+- API: token nell'header `Authorization: Bearer`, scadenza opzionale, interfaccia
+  di ascolto selezionabile, timeout di I/O, limiti su header e connessioni.
+- CSP di Tauri attiva (`default-src 'self'`, nessuna origine esterna).
+- Validazione della livrea rispetto all'auto e dello SteamID64.
+
+### Corretto
+
+- `entry_list.ini`: il salvataggio preserva commenti, ordine e chiavi sconosciute.
+- Backup obbligatorio prima di ogni salvataggio e scritture atomiche.
+- Lo stesso SteamID riusa il proprio slot invece di crearne un altro.
+- I processi esterni vengono mostrati con PID e percorso prima di terminarli.
+
+### CI
+
+- `cargo clippy --all-targets --all-features -- -D warnings`.
+
 ## [1.0.0] - 2026-11-04
 
 Prima release pubblica.

@@ -1,11 +1,18 @@
 export type LogEntry = { ts: string; stream: string; message: string };
 
+export type ExternalServer = {
+  pid: number;
+  path: string;
+};
+
 export type InviteSettings = {
   name: string;
   token: string;
   accent: string;
   banner: string;
   api_port: number;
+  api_bind: string;
+  expires_at: number | null;
 };
 
 export type JoinArgs = {

@@ -235,7 +235,7 @@ allegati alla release più recente.
 [MIT](LICENSE) © 2026 terzastella
 
 Assetto Corsa, Content Manager e i relativi contenuti appartengono ai rispettivi
-proprietari. Questo progetto non è affiliato a Kunos Simulazioni.
+proprietari. Questo progetto non è affiliato a Kunos Simulazioni. Vedi [NOTICE.md](NOTICE.md).
 
 ---
 

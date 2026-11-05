@@ -233,7 +233,7 @@ attached to the latest release.
 [MIT](LICENSE) © 2026 terzastella
 
 Assetto Corsa, Content Manager and their assets belong to their respective owners.
-This project is not affiliated with Kunos Simulazioni.
+This project is not affiliated with Kunos Simulazioni. See [NOTICE.md](NOTICE.md).
 
 ---
 

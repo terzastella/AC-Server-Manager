@@ -4,6 +4,7 @@ import { api } from "../api";
 import { Badge, Button, Card } from "../components/ui";
 import { useApp } from "../store";
 import { useT } from "../i18n/core";
+import { profileName } from "../profileName";
 
 export function Servers() {
   const { t } = useT();
@@ -87,7 +88,7 @@ export function Servers() {
                     autoFocus
                   />
                 ) : (
-                  <strong>{profile.name}</strong>
+                  <strong>{profileName(profile, t)}</strong>
                 )}
                 {profiles?.active === profile.id && <Badge tone="accent">{t("servers.active")}</Badge>}
                 {profile.legacy && <Badge tone="muted">{t("servers.default")}</Badge>}
@@ -121,7 +122,7 @@ export function Servers() {
                         onClick={() =>
                           void run("profile-activate", async () => {
                             await switchProfile(profile.id);
-                            notify(t("servers.notifyActivated", { name: profile.name }), "success");
+                            notify(t("servers.notifyActivated", { name: profileName(profile, t) }), "success");
                           })
                         }
                       >
@@ -159,7 +160,7 @@ export function Servers() {
               </div>
               {pending === profile.id && (
                 <div className="profile-confirm">
-                  <span>{t("servers.confirmDelete", { name: profile.name })}</span>
+                  <span>{t("servers.confirmDelete", { name: profileName(profile, t) })}</span>
                   <Button
                     variant="danger"
                     onClick={() => remove(profile.id)}

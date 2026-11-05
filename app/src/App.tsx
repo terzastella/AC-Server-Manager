@@ -13,6 +13,7 @@ import { Logs } from "./pages/Logs";
 import { Settings } from "./pages/Settings";
 import { Servers } from "./pages/Servers";
 import { useT, type TKey } from "./i18n/core";
+import { profileName } from "./profileName";
 import { fmtUptime } from "./utils";
 
 type PageId =
@@ -84,7 +85,7 @@ function Shell() {
           >
             {(profiles?.profiles ?? []).map((profile) => (
               <option key={profile.id} value={profile.id}>
-                {profile.name}
+                {profileName(profile, t)}
               </option>
             ))}
           </select>

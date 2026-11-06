@@ -140,12 +140,28 @@ impl AppState {
     pub fn persist(&self) -> Result<(), String> {
         let _guard = PERSIST_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
         let snapshot = self.settings.lock().unwrap().clone();
-        let text = serde_json::to_string_pretty(&snapshot)
-            .map_err(|error| format!("settings.json non serializzabile: {}", error))?;
         let path = settings_path(&self.exe_path);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         }
+
+        // Manager e Launcher sono due processi: prima di scrivere si rilegge il
+        // file e si toccano solo i campi di competenza, così nessuno cancella
+        // le modifiche dell'altro.
+        let _file_lock = FileLock::acquire(&path)?;
+        let disk = fs::read_to_string(&path)
+            .ok()
+            .map(|text| {
+                text.strip_prefix('\u{feff}')
+                    .map(str::to_string)
+                    .unwrap_or(text)
+            })
+            .and_then(|text| serde_json::from_str::<Settings>(&text).ok())
+            .unwrap_or_default();
+        let merged = merge_for_process(self.launcher_mode, disk, snapshot);
+
+        let text = serde_json::to_string_pretty(&merged)
+            .map_err(|error| format!("settings.json non serializzabile: {}", error))?;
         let seq = PERSIST_SEQ.fetch_add(1, Ordering::Relaxed);
         let temp = path.with_file_name(format!("settings.{}.{}.tmp", std::process::id(), seq));
         fs::write(&temp, &text).map_err(|error| format!("{}: {}", temp.display(), error))?;
@@ -162,6 +178,72 @@ impl AppState {
             let _ = fs::remove_file(&temp);
             format!("{}: {}", path.display(), error)
         })
+    }
+}
+
+/// Campi che appartengono al Launcher: il Manager non li deve sovrascrivere e
+/// viceversa. `language` è condiviso, quindi vince chi salva.
+fn merge_for_process(launcher: bool, disk: Settings, mine: Settings) -> Settings {
+    let mut merged = disk;
+    merged.language = mine.language;
+    if launcher {
+        merged.driver_name = mine.driver_name;
+        merged.saved_invites = mine.saved_invites;
+    } else {
+        merged.server_dir = mine.server_dir;
+        merged.game_dir = mine.game_dir;
+        merged.cm_dir = mine.cm_dir;
+        merged.theme = mine.theme;
+        merged.invite = mine.invite;
+    }
+    merged
+}
+
+/// Lock tra processi tramite file: evita che Manager e Launcher leggano e
+/// riscrivano nello stesso istante. Un lock più vecchio di 10 secondi è
+/// considerato rimasto appeso e viene rimosso.
+struct FileLock {
+    path: PathBuf,
+}
+
+impl FileLock {
+    fn acquire(target: &Path) -> Result<Self, String> {
+        let path = target.with_file_name("settings.lock");
+        for _ in 0..100 {
+            match fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+            {
+                Ok(_) => return Ok(Self { path }),
+                Err(error) if error.kind() == ErrorKind::AlreadyExists => {
+                    if let Ok(metadata) = fs::metadata(&path) {
+                        let stale = metadata
+                            .modified()
+                            .ok()
+                            .and_then(|time| time.elapsed().ok())
+                            .map(|age| age.as_secs() > 10)
+                            .unwrap_or(false);
+                        if stale {
+                            let _ = fs::remove_file(&path);
+                            continue;
+                        }
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+                Err(error) => return Err(format!("{}: {}", path.display(), error)),
+            }
+        }
+        Err(crate::messages::tr(
+            "impostazioni in uso da un'altra istanza",
+            "settings are being written by another instance",
+        ))
+    }
+}
+
+impl Drop for FileLock {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
     }
 }
 
@@ -249,6 +331,50 @@ mod tests {
         let settings: InviteSettings = serde_json::from_str(json).expect("json valido");
         assert_eq!(settings.api_bind, "0.0.0.0");
         assert!(settings.expires_at.is_none());
+    }
+
+    #[test]
+    fn manager_persist_keeps_launcher_fields() {
+        let disk = Settings {
+            driver_name: "Luca".into(),
+            saved_invites: vec![SavedInvite {
+                link: "acservercontrol://join?x".into(),
+            }],
+            ..Settings::default()
+        };
+        let mine = Settings {
+            theme: "light".into(),
+            server_dir: Some("C:\\srv".into()),
+            ..Settings::default()
+        };
+
+        let merged = merge_for_process(false, disk, mine);
+        assert_eq!(merged.driver_name, "Luca");
+        assert_eq!(merged.saved_invites.len(), 1);
+        assert_eq!(merged.theme, "light");
+        assert_eq!(merged.server_dir.as_deref(), Some("C:\\srv"));
+    }
+
+    #[test]
+    fn launcher_persist_keeps_manager_fields() {
+        let disk = Settings {
+            theme: "light".into(),
+            server_dir: Some("C:\\srv".into()),
+            ..Settings::default()
+        };
+        let mine = Settings {
+            driver_name: "Luca".into(),
+            saved_invites: vec![SavedInvite {
+                link: "acservercontrol://join?x".into(),
+            }],
+            ..Settings::default()
+        };
+
+        let merged = merge_for_process(true, disk, mine);
+        assert_eq!(merged.theme, "light");
+        assert_eq!(merged.server_dir.as_deref(), Some("C:\\srv"));
+        assert_eq!(merged.driver_name, "Luca");
+        assert_eq!(merged.saved_invites.len(), 1);
     }
 
     #[test]

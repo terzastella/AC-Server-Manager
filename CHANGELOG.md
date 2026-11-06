@@ -4,6 +4,15 @@ Le modifiche importanti del progetto. Formato basato su
 [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni
 [SemVer](https://semver.org/lang/it/).
 
+## [1.0.4] - 2026-11-06
+
+### Corretto
+
+- **Manager e Launcher sullo stesso `settings.json`**: prima l'ultimo che
+  salvava sovrascriveva i campi dell'altro (il nome pilota poteva sparire).
+  Ora ogni processo rilegge il file e aggiorna solo i campi di sua competenza,
+  sotto un lock tra processi (`settings.lock`, considerato scaduto dopo 10 s).
+
 ## [1.0.3] - 2026-11-06
 
 ### Sicurezza
@@ -119,6 +128,7 @@ Prima release pubblica.
 - I binari non contengono più i percorsi assoluti della macchina di compilazione:
   `build.ps1` riscrive il profilo utente in `/build` (`--remap-path-prefix`).
 
+[1.0.4]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.4
 [1.0.3]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.3
 [1.0.2]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.2
 [1.0.1]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.1

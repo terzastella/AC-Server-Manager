@@ -19,6 +19,7 @@ import type {
   ProfileIndex,
   ServerStatus,
   Settings,
+  EntryList,
 } from "./types";
 
 export type Toast = { id: number; text: string; tone: "info" | "success" | "error" };
@@ -29,6 +30,7 @@ type Store = {
   settings: Settings | null;
   config: IniDoc | null;
   slots: CarSlot[];
+  slotsRevision: number;
   content: ContentReport | null;
   profiles: ProfileIndex | null;
   adapters: Adapter[];
@@ -57,6 +59,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [config, setConfig] = useState<IniDoc | null>(null);
   const [slots, setSlots] = useState<CarSlot[]>([]);
+  const [slotsRevision, setSlotsRevision] = useState(0);
   const [content, setContent] = useState<ContentReport | null>(null);
   const [profiles, setProfiles] = useState<ProfileIndex | null>(null);
   const [adapters, setAdapters] = useState<Adapter[]>([]);
@@ -90,7 +93,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const refreshSlots = useCallback(async () => {
-    setSlots(await api.readSlots());
+    const data = await api.readSlots();
+    setSlots(data.slots);
+    setSlotsRevision(data.revision);
   }, []);
 
   const refreshContent = useCallback(async () => {
@@ -128,8 +133,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (nextStatus) setStatus(nextStatus);
     const nextConfig = value<IniDoc>(3);
     if (nextConfig) setConfig(nextConfig);
-    const nextSlots = value<CarSlot[]>(4);
-    if (nextSlots) setSlots(nextSlots);
+    const nextSlots = value<EntryList>(4);
+    if (nextSlots) {
+      setSlots(nextSlots.slots);
+      setSlotsRevision(nextSlots.revision);
+    }
     const nextContent = value<ContentReport>(5);
     if (nextContent) setContent(nextContent);
     const nextAdapters = value<Adapter[]>(6);
@@ -209,6 +217,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       settings,
       config,
       slots,
+    slotsRevision,
       content,
       profiles,
       adapters,
@@ -234,6 +243,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       settings,
       config,
       slots,
+      slotsRevision,
       content,
       profiles,
       adapters,

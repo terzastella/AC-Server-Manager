@@ -4,6 +4,25 @@ Le modifiche importanti del progetto. Formato basato su
 [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni
 [SemVer](https://semver.org/lang/it/).
 
+## [1.0.7] - 2026-11-06
+
+### Corretto
+
+- **Versione della lista slot legata al draft**: il frontend riceve l'impronta
+  della lista che ha davanti e la rimanda al salvataggio. Se nel frattempo è
+  arrivata una prenotazione il salvataggio viene rifiutato, anche se nel
+  frattempo l'interfaccia ha riletto gli slot in background.
+- **Salvataggio bloccato con prenotazioni in attesa**: mentre il draft è
+  modificato e c'è un aggiornamento dal server, il pulsante Salva è disattivato
+  fino a "Scarta e ricarica".
+- **Backup**: nome della cartella con i millisecondi e suffisso progressivo in
+  caso di collisione, quindi due backup ravvicinati non si sovrascrivono.
+- **`welcome.txt`**: anche il suo salvataggio usa il lock condiviso, così il
+  preset cattura sempre i tre file coerenti.
+- **Processi esterni**: verifica dell'eseguibile e terminazione avvengono sullo
+  stesso handle (`OpenProcess` + `QueryFullProcessImageNameW` +
+  `TerminateProcess`), eliminando la finestra di riuso del PID.
+
 ## [1.0.6] - 2026-11-06
 
 ### Corretto
@@ -171,6 +190,7 @@ Prima release pubblica.
 - I binari non contengono più i percorsi assoluti della macchina di compilazione:
   `build.ps1` riscrive il profilo utente in `/build` (`--remap-path-prefix`).
 
+[1.0.7]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.7
 [1.0.6]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.6
 [1.0.5]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.5
 [1.0.4]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.4

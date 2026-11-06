@@ -107,6 +107,11 @@ export type IniEntry = { key: string; value: string };
 export type IniSection = { name: string; entries: IniEntry[] };
 export type IniDoc = { sections: IniSection[]; newline: string };
 
+export type EntryList = {
+  slots: CarSlot[];
+  revision: number;
+};
+
 export type CarSlot = {
   driver_name: string;
   team: string;

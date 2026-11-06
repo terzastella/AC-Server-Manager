@@ -157,7 +157,6 @@ pub fn run() {
             join_uri: Mutex::new(join_argument()),
             launcher_mode,
             profiles: Mutex::new(state::load_profiles(&server_dir)),
-            entry_stamp: Mutex::new(None),
         })
         .setup(|app| {
             if let Ok(exe) = std::env::current_exe() {

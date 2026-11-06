@@ -396,7 +396,6 @@ fn reserve(state: &AppState, body: &serde_json::Value) -> Result<usize, ReserveF
         })?;
     commands::backup_cfg(state).map_err(ReserveFailure::Internal)?;
     commands::write_text_atomic(&path, &text).map_err(ReserveFailure::Internal)?;
-    *state.entry_stamp.lock().unwrap() = Some(commands::file_stamp(&path));
     Ok(slot)
 }
 

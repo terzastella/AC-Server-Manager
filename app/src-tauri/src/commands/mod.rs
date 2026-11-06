@@ -285,3 +285,26 @@ mod join;
 pub use join::*;
 mod assists_cmds;
 pub use assists_cmds::*;
+
+#[cfg(test)]
+mod stamp_tests {
+    use super::*;
+
+    #[test]
+    fn stamp_changes_when_the_file_changes() {
+        let dir = std::env::temp_dir().join(format!("acsc-stamp-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("cartella");
+        let path = dir.join("entry_list.ini");
+
+        fs::write(&path, "a").expect("scrittura");
+        let first = file_stamp(&path);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        fs::write(&path, "bb").expect("riscrittura");
+        let second = file_stamp(&path);
+
+        assert_ne!(first, second);
+        assert_ne!(second, 0);
+        let _ = fs::remove_dir_all(&dir);
+    }
+}

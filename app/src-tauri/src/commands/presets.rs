@@ -77,7 +77,6 @@ pub fn load_preset(state: State<AppState>, name: String) -> Result<(), String> {
             fs::copy(&from, destination.join(file)).map_err(|error| error.to_string())?;
         }
     }
-    *state.entry_stamp.lock().unwrap() = Some(file_stamp(&destination.join("entry_list.ini")));
     Ok(())
 }
 

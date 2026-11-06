@@ -172,6 +172,61 @@ fn is_acserver_exe(path: &str) -> bool {
             .unwrap_or(false)
 }
 
+/// Verifica e termina **lo stesso handle** del processo scelto: sparisce la
+/// finestra in cui il PID poteva essere riusato tra controllo e `taskkill`.
+#[cfg(windows)]
+fn terminate_verified(pid: u32) -> Result<(), String> {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, TerminateProcess,
+        PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
+    };
+
+    let handle = unsafe {
+        OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE,
+            0,
+            pid,
+        )
+    };
+    if handle.is_null() {
+        return Err(messages::tr(
+            &format!("impossibile aprire il processo {}", pid),
+            &format!("cannot open process {}", pid),
+        ));
+    }
+
+    let mut buffer = [0u16; 1024];
+    let mut size = buffer.len() as u32;
+    let read = unsafe { QueryFullProcessImageNameW(handle, 0, buffer.as_mut_ptr(), &mut size) };
+    if read == 0 {
+        unsafe { CloseHandle(handle) };
+        return Err(messages::tr(
+            &format!("impossibile leggere l'eseguibile del PID {}", pid),
+            &format!("cannot read the executable of PID {}", pid),
+        ));
+    }
+
+    let path = String::from_utf16_lossy(&buffer[..size as usize]);
+    if !is_acserver_exe(&path) {
+        unsafe { CloseHandle(handle) };
+        return Err(messages::tr(
+            &format!("rifiutato: il PID {} non è acServer.exe", pid),
+            &format!("refused: PID {} is not acServer.exe", pid),
+        ));
+    }
+
+    let terminated = unsafe { TerminateProcess(handle, 1) };
+    unsafe { CloseHandle(handle) };
+    if terminated == 0 {
+        return Err(messages::tr(
+            &format!("impossibile terminare il PID {}", pid),
+            &format!("cannot terminate PID {}", pid),
+        ));
+    }
+    Ok(())
+}
+
 /// Termina un solo processo, quello scelto dall'utente, dopo aver verificato
 /// che sia ancora `acServer.exe`: il PID da solo può essere stato riusato.
 #[tauri::command]
@@ -182,43 +237,51 @@ pub fn stop_external_server(pid: u32) -> Result<u32, String> {
             "the process is no longer running",
         ));
     }
-    // se non si riesce a leggere il percorso non si può verificare l'eseguibile:
-    // meglio rifiutare che uccidere un PID riusato da un altro processo
-    match server_paths().remove(&pid) {
-        Some(path) if is_acserver_exe(&path) => {}
-        Some(_) => {
-            return Err(messages::tr(
-                &format!("rifiutato: il PID {} non è acServer.exe", pid),
-                &format!("refused: PID {} is not acServer.exe", pid),
-            ))
-        }
-        None => {
-            return Err(messages::tr(
-                &format!(
-                    "rifiutato: impossibile verificare l'eseguibile del PID {}",
-                    pid
-                ),
-                &format!("refused: cannot verify the executable of PID {}", pid),
-            ))
-        }
-    }
-    let mut command = Command::new("taskkill");
-    command.args(["/PID", &pid.to_string(), "/F"]);
+
     #[cfg(windows)]
-    command.creation_flags(CREATE_NO_WINDOW);
-    match command.output() {
-        Ok(output) if output.status.success() => Ok(1),
-        Ok(output) => {
-            let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            Err(messages::tr(
-                &format!("impossibile terminare il PID {}: {}", pid, detail),
-                &format!("cannot terminate PID {}: {}", pid, detail),
-            ))
+    {
+        terminate_verified(pid)?;
+        Ok(1)
+    }
+
+    #[cfg(not(windows))]
+    {
+        // fuori da Windows non c'è l'handle: si verifica il percorso, e se non
+        // è leggibile si rifiuta invece di uccidere un PID riusato
+        match server_paths().remove(&pid) {
+            Some(path) if is_acserver_exe(&path) => {}
+            Some(_) => {
+                return Err(messages::tr(
+                    &format!("rifiutato: il PID {} non è acServer.exe", pid),
+                    &format!("refused: PID {} is not acServer.exe", pid),
+                ))
+            }
+            None => {
+                return Err(messages::tr(
+                    &format!(
+                        "rifiutato: impossibile verificare l'eseguibile del PID {}",
+                        pid
+                    ),
+                    &format!("refused: cannot verify the executable of PID {}", pid),
+                ))
+            }
         }
-        Err(error) => Err(messages::tr(
-            &format!("taskkill non avviato: {}", error),
-            &format!("taskkill failed to start: {}", error),
-        )),
+        let mut command = Command::new("taskkill");
+        command.args(["/PID", &pid.to_string(), "/F"]);
+        match command.output() {
+            Ok(output) if output.status.success() => Ok(1),
+            Ok(output) => {
+                let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                Err(messages::tr(
+                    &format!("impossibile terminare il PID {}: {}", pid, detail),
+                    &format!("cannot terminate PID {}: {}", pid, detail),
+                ))
+            }
+            Err(error) => Err(messages::tr(
+                &format!("taskkill non avviato: {}", error),
+                &format!("taskkill failed to start: {}", error),
+            )),
+        }
     }
 }
 
@@ -412,14 +475,27 @@ pub fn tail_log(state: State<AppState>, file: String, lines: usize) -> Result<St
 pub(crate) fn backup_cfg(state: &AppState) -> Result<String, String> {
     let dir = state.server_dir();
     let profile = state.active_profile();
-    let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+    // millisecondi + eventuale suffisso: due backup ravvicinati non si fondono
+    let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S-%3f").to_string();
     let tag = if profile.slug.is_empty() {
         "default".to_string()
     } else {
         profile.slug.clone()
     };
-    let destination = dir.join("backups").join(format!("cfg-{}-{}", tag, stamp));
-    fs::create_dir_all(&destination).map_err(|error| error.to_string())?;
+    let root = dir.join("backups");
+    fs::create_dir_all(&root).map_err(|error| error.to_string())?;
+    let mut destination = root.join(format!("cfg-{}-{}", tag, stamp));
+    let mut attempt = 1;
+    loop {
+        match fs::create_dir(&destination) {
+            Ok(()) => break,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists && attempt < 100 => {
+                destination = root.join(format!("cfg-{}-{}-{}", tag, stamp, attempt));
+                attempt += 1;
+            }
+            Err(error) => return Err(error.to_string()),
+        }
+    }
     let source = state.cfg_dir();
     for name in ["server_cfg.ini", "entry_list.ini", "welcome.txt"] {
         let from = source.join(name);

@@ -777,7 +777,6 @@ mod content_library_tests {
             library_cache: Mutex::new(None),
             join_uri: Mutex::new(None),
             launcher_mode: false,
-            entry_stamp: Mutex::new(None),
         };
 
         let library = content_library_impl(&state);

@@ -103,9 +103,6 @@ pub struct AppState {
     pub join_uri: Mutex<Option<String>>,
     pub launcher_mode: bool,
     pub profiles: Mutex<crate::profiles::ProfileIndex>,
-    /// Impronta di entry_list.ini al momento dell'ultima lettura fatta
-    /// dall'interfaccia: serve a non sovrascrivere prenotazioni arrivate dopo.
-    pub entry_stamp: Mutex<Option<u64>>,
 }
 
 impl AppState {

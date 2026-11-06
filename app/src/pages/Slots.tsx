@@ -21,10 +21,11 @@ const EMPTY_SLOT: CarSlot = {
 
 export function Slots() {
   const { t } = useT();
-  const { slots, config, content, settings, refreshSlots, refreshContent, refreshConfig, run, notify } = useApp();
+  const { slots, slotsRevision, config, content, settings, refreshSlots, refreshContent, refreshConfig, run, notify } = useApp();
   const [draft, setDraft] = useState<CarSlot[]>([]);
   // ultima versione ricevuta dal server (non modificata dall'utente)
   const syncedRef = useRef<CarSlot[]>([]);
+  const syncedRevisionRef = useRef(0);
   const draftRef = useRef<CarSlot[]>([]);
   const [pendingRemote, setPendingRemote] = useState(false);
   const [library, setLibrary] = useState<ContentLibrary | null>(null);
@@ -44,13 +45,14 @@ export function Slots() {
     const next = slots.map((slot) => ({ ...slot }));
     if (sameSlots(draftRef.current, syncedRef.current)) {
       syncedRef.current = next;
+      syncedRevisionRef.current = slotsRevision;
       setDraft(next);
       setPendingRemote(false);
     } else if (!sameSlots(next, syncedRef.current)) {
       // prenotazione arrivata mentre stai modificando: non cancellare il draft
       setPendingRemote(true);
     }
-  }, [slots]);
+  }, [slots, slotsRevision]);
 
   const reloadFromServer = () => {
     // scarta le modifiche locali e adotta quello che c'e' su disco
@@ -208,7 +210,7 @@ export function Slots() {
       }
       const addedSlots = nextSlots.length - draft.length;
       if (addedSlots > 0) {
-        await api.saveSlots(nextSlots);
+        await api.saveSlots(nextSlots, slotsRevision);
         syncedRef.current = nextSlots.map((slot) => ({ ...slot }));
         setPendingRemote(false);
         await refreshSlots();
@@ -318,9 +320,11 @@ export function Slots() {
             </Button>
             <Button
               variant="primary"
+              disabled={pendingRemote}
+              title={pendingRemote ? t("slots.pendingText") : undefined}
               onClick={() =>
                 void run("save-slots", async () => {
-                  await api.saveSlots(draft);
+                  await api.saveSlots(draft, syncedRevisionRef.current);
                   syncedRef.current = draft.map((slot) => ({ ...slot }));
                   setPendingRemote(false);
                   await refreshSlots();

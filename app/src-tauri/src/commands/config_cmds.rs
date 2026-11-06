@@ -37,13 +37,13 @@ pub struct CarSlot {
 }
 
 #[tauri::command]
-pub fn read_entry_list(state: State<AppState>) -> Result<Vec<CarSlot>, String> {
+pub fn read_entry_list(state: State<AppState>) -> Result<EntryList, String> {
     let path = state.cfg_dir().join("entry_list.ini");
-    // lettura e impronta sotto lo stesso lock: una prenotazione non può
+    // lettura e revisione sotto lo stesso lock: una prenotazione non può
     // infilarsi tra le due e far sembrare aggiornata una lista vecchia
     let _guard = entry_lock().lock().unwrap();
     let text = read_text(&path)?;
-    *state.entry_stamp.lock().unwrap() = Some(file_stamp(&path));
+    let revision = file_stamp(&path);
     let mut slots = Vec::new();
     for section in ini::parse(&text).sections {
         if !section.name.to_uppercase().starts_with("CAR_") {
@@ -66,7 +66,7 @@ pub fn read_entry_list(state: State<AppState>) -> Result<Vec<CarSlot>, String> {
         }
         slots.push(slot);
     }
-    Ok(slots)
+    Ok(EntryList { slots, revision })
 }
 
 fn slot_entries(slot: &CarSlot) -> Vec<ini::Entry> {
@@ -143,20 +143,32 @@ pub(crate) fn apply_slots(base: &str, slots: &[CarSlot]) -> String {
     remove_sections(&applied, &extra)
 }
 
+#[derive(Clone, Serialize)]
+pub struct EntryList {
+    pub slots: Vec<CarSlot>,
+    /// Impronta del file letto: il frontend la rimanda al salvataggio, così
+    /// non può sovrascrivere prenotazioni arrivate dopo quella lettura.
+    pub revision: u64,
+}
+
 #[tauri::command]
-pub fn save_entry_list(state: State<AppState>, slots: Vec<CarSlot>) -> Result<String, String> {
+pub fn save_entry_list(
+    state: State<AppState>,
+    slots: Vec<CarSlot>,
+    revision: u64,
+) -> Result<String, String> {
     let path = state.cfg_dir().join("entry_list.ini");
     // stesso lock delle prenotazioni HTTP: le due scritture non si sovrappongono
     let _guard = entry_lock().lock().unwrap();
 
+    // confronto con la versione che il frontend aveva davanti, non con una
+    // impronta globale aggiornata da una rilettura in background
     let current = file_stamp(&path);
-    if let Some(known) = *state.entry_stamp.lock().unwrap() {
-        if known != current {
-            return Err(messages::tr(
-                "la lista degli slot è cambiata (nuove prenotazioni): ricarica prima di salvare",
-                "the slot list changed (new bookings): reload before saving",
-            ));
-        }
+    if current != revision {
+        return Err(messages::tr(
+            "la lista degli slot è cambiata (nuove prenotazioni): ricarica prima di salvare",
+            "the slot list changed (new bookings): reload before saving",
+        ));
     }
 
     // file assente = profilo nuovo (si crea), errore di lettura = si annulla
@@ -164,7 +176,6 @@ pub fn save_entry_list(state: State<AppState>, slots: Vec<CarSlot>) -> Result<St
     let backup = backup_cfg(&state)?;
     let text = apply_slots(&base, &slots);
     write_text_atomic(&path, &text)?;
-    *state.entry_stamp.lock().unwrap() = Some(file_stamp(&path));
     Ok(backup)
 }
 
@@ -175,6 +186,8 @@ pub fn read_welcome(state: State<AppState>) -> Result<String, String> {
 
 #[tauri::command]
 pub fn save_welcome(state: State<AppState>, text: String) -> Result<(), String> {
+    // stesso lock dei preset: welcome.txt fa parte dello stesso snapshot
+    let _guard = entry_lock().lock().unwrap();
     write_text_atomic(&state.cfg_dir().join("welcome.txt"), &text)
 }
 

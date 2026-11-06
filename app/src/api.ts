@@ -11,6 +11,7 @@ import type {
   CopyReport,
   IniDoc,
   IniSection,
+  EntryList,
   LogEntry,
   LogFile,
   PortState,
@@ -61,8 +62,9 @@ export const api = {
   readWelcome: () => invoke<string>("read_welcome"),
   saveWelcome: (text: string) => invoke<void>("save_welcome", { text }),
 
-  readSlots: () => invoke<CarSlot[]>("read_entry_list"),
-  saveSlots: (slots: CarSlot[]) => invoke<string>("save_entry_list", { slots }),
+  readSlots: () => invoke<EntryList>("read_entry_list"),
+  saveSlots: (slots: CarSlot[], revision: number) =>
+    invoke<string>("save_entry_list", { slots, revision }),
 
   scanContent: () => invoke<ContentReport>("scan_content"),
   contentLibrary: () => invoke<ContentLibrary>("content_library"),

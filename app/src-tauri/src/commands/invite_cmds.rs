@@ -53,7 +53,7 @@ pub fn save_invite_settings(
     settings.invite = InviteSettings { token, ..invite };
     let saved = settings.invite.clone();
     drop(settings);
-    state.persist();
+    state.persist()?;
     Ok(saved)
 }
 
@@ -64,7 +64,7 @@ pub fn regenerate_invite_token(state: State<AppState>) -> Result<InviteSettings,
     settings.invite.token = token;
     let saved = settings.invite.clone();
     drop(settings);
-    state.persist();
+    state.persist()?;
     Ok(saved)
 }
 
@@ -135,12 +135,12 @@ pub fn add_invite(state: State<AppState>, link: String) -> Result<LauncherState,
         invites: settings.saved_invites.clone(),
     };
     drop(settings);
-    state.persist();
+    state.persist()?;
     Ok(snapshot)
 }
 
 #[tauri::command]
-pub fn remove_invite(state: State<AppState>, link: String) -> LauncherState {
+pub fn remove_invite(state: State<AppState>, link: String) -> Result<LauncherState, String> {
     let mut settings = state.settings.lock().unwrap();
     settings.saved_invites.retain(|invite| invite.link != link);
     let snapshot = LauncherState {
@@ -149,12 +149,12 @@ pub fn remove_invite(state: State<AppState>, link: String) -> LauncherState {
         invites: settings.saved_invites.clone(),
     };
     drop(settings);
-    state.persist();
-    snapshot
+    state.persist()?;
+    Ok(snapshot)
 }
 
 #[tauri::command]
-pub fn set_driver_name(state: State<AppState>, name: String) -> String {
+pub fn set_driver_name(state: State<AppState>, name: String) -> Result<String, String> {
     let trimmed: String = name.trim().chars().take(40).collect();
     let cleaned: String = trimmed
         .chars()
@@ -164,8 +164,8 @@ pub fn set_driver_name(state: State<AppState>, name: String) -> String {
         let mut settings = state.settings.lock().unwrap();
         settings.driver_name = cleaned.clone();
     }
-    state.persist();
-    cleaned
+    state.persist()?;
+    Ok(cleaned)
 }
 
 #[tauri::command]

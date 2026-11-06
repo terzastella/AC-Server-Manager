@@ -339,6 +339,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
   line-height: 1.45;
 }
 .field input, .field select, .field textarea { width: 100%; }
+.field-warn {
+  display: block;
+  padding: 5px 9px;
+  border-left: 2px solid rgba(245, 185, 66, 0.6);
+  border-radius: 0 5px 5px 0;
+  background: rgba(245, 185, 66, 0.08);
+  color: #e9c98c;
+  font-size: 11px;
+  line-height: 1.4;
+}
 
 input, select, textarea {
   height: 32px;

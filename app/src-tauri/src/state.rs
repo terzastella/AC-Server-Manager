@@ -126,15 +126,31 @@ impl AppState {
         crate::profiles::profile_dir(&self.server_dir(), &self.active_profile())
     }
 
-    pub fn persist(&self) {
+    /// Scrive `settings.json` in modo atomico. L'errore viene restituito:
+    /// l'interfaccia non deve credere salvato ciò che non è finito su disco.
+    pub fn persist(&self) -> Result<(), String> {
         let snapshot = self.settings.lock().unwrap().clone();
-        if let Ok(text) = serde_json::to_string_pretty(&snapshot) {
-            let path = settings_path(&self.exe_path);
-            let temp = path.with_extension("json.tmp");
-            if fs::write(&temp, text).is_ok() {
-                let _ = fs::rename(&temp, &path);
-            }
+        let text = serde_json::to_string_pretty(&snapshot)
+            .map_err(|error| format!("settings.json non serializzabile: {}", error))?;
+        let path = settings_path(&self.exe_path);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         }
+        let temp = path.with_file_name(format!("settings.{}.tmp", std::process::id()));
+        fs::write(&temp, &text).map_err(|error| format!("{}: {}", temp.display(), error))?;
+        let written =
+            fs::read_to_string(&temp).map_err(|error| format!("{}: {}", temp.display(), error))?;
+        if written != text {
+            let _ = fs::remove_file(&temp);
+            return Err(crate::messages::tr(
+                "scrittura incompleta: impostazioni non salvate",
+                "incomplete write: settings not saved",
+            ));
+        }
+        fs::rename(&temp, &path).map_err(|error| {
+            let _ = fs::remove_file(&temp);
+            format!("{}: {}", path.display(), error)
+        })
     }
 }
 

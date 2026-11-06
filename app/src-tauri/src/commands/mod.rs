@@ -184,8 +184,7 @@ pub fn get_settings(state: State<AppState>) -> Settings {
 #[tauri::command]
 pub fn save_settings(state: State<AppState>, settings: Settings) -> Result<(), String> {
     *state.settings.lock().unwrap() = settings;
-    state.persist();
-    Ok(())
+    state.persist()
 }
 
 /// Lingua dell'interfaccia: `it` o `en`. Vale anche per i messaggi del backend.
@@ -204,7 +203,7 @@ pub fn set_language(state: State<AppState>, language: String) -> Result<Settings
         let mut settings = state.settings.lock().unwrap();
         settings.language = lang.clone();
     }
-    state.persist();
+    state.persist()?;
     crate::messages::set(&lang);
     Ok(state.settings.lock().unwrap().clone())
 }
@@ -222,7 +221,7 @@ pub fn set_server_dir(state: State<AppState>, dir: String) -> Result<AppInfo, St
     state.settings.lock().unwrap().server_dir = Some(path.to_string_lossy().to_string());
     *state.profiles.lock().unwrap() = crate::state::load_profiles(&path);
     invalidate_library(&state);
-    state.persist();
+    state.persist()?;
     Ok(app_info(state))
 }
 

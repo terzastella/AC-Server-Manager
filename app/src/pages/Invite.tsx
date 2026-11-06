@@ -133,6 +133,9 @@ export function Invite() {
                 </option>
               ))}
             </select>
+            {draft.api_bind === "0.0.0.0" && (
+              <span className="field-warn">{t("invite.bindWarning")}</span>
+            )}
           </label>
           <label className="field">
             <span className="field-label">{t("invite.expiryLabel")}</span>

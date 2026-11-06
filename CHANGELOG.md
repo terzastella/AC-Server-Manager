@@ -4,6 +4,25 @@ Le modifiche importanti del progetto. Formato basato su
 [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni
 [SemVer](https://semver.org/lang/it/).
 
+## [1.0.3] - 2026-11-06
+
+### Sicurezza
+
+- Confronto del token a tempo costante: il tempo di risposta non dipende da
+  quanti caratteri combaciano (niente più `==` sulle stringhe).
+- API su tutte le interfacce: la pagina Invito mostra un avviso esplicito
+  quando `api_bind` è `0.0.0.0`, così la scelta è consapevole.
+
+### Corretto
+
+- `state.persist()` restituisce `Result`: se `settings.json` non si scrive,
+  il comando fallisce e l'interfaccia lo mostra, invece di dare per salvato
+  ciò che è rimasto solo in memoria.
+- Impostazioni scritte in modo atomico con file temporaneo univoco e verifica
+  del contenuto prima della sostituzione.
+- Processi esterni: il percorso deve essere assoluto e il nome del file
+  esattamente `acServer.exe` (prima bastava il suffisso).
+
 ## [1.0.2] - 2026-11-06
 
 Correzioni emerse da una seconda revisione esterna.
@@ -83,6 +102,7 @@ Prima release pubblica.
 - I binari non contengono più i percorsi assoluti della macchina di compilazione:
   `build.ps1` riscrive il profilo utente in `/build` (`--remap-path-prefix`).
 
+[1.0.3]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.3
 [1.0.2]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.2
 [1.0.1]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.1
 [1.0.0]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.0

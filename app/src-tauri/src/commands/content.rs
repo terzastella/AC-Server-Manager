@@ -182,7 +182,7 @@ pub fn copy_content(state: State<AppState>, game_dir: String) -> Result<CopyRepo
 
     {
         state.settings.lock().unwrap().game_dir = Some(game_dir.clone());
-        state.persist();
+        state.persist()?;
     }
     invalidate_library(&state);
 
@@ -394,7 +394,9 @@ fn build_library(state: &AppState) -> ContentLibrary {
             if settings.game_dir.as_deref() != Some(dir.as_str()) {
                 settings.game_dir = Some(dir.clone());
                 drop(settings);
-                state.persist();
+                if let Err(error) = state.persist() {
+                    eprintln!("impostazioni non salvate: {}", error);
+                }
             }
         }
         detected.map(PathBuf::from)

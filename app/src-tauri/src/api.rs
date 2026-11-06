@@ -57,10 +57,20 @@ fn rate_ok(peer: &str, max: usize) -> bool {
     rate_allowed(store, peer, max, Instant::now())
 }
 
-/// Un token vuoto non combacia mai: se il generatore casuale fallisce,
-/// nessuno può autenticarsi invece di avere un token prevedibile.
+/// Confronto a tempo costante: il tempo impiegato non dipende da quanti
+/// caratteri combaciano. La lunghezza del token è pubblica (43 caratteri
+/// base64url), quindi uscire subito su lunghezza diversa non rivela altro.
 fn token_matches(expected: &str, provided: &str) -> bool {
-    !expected.is_empty() && expected == provided
+    let expected = expected.as_bytes();
+    let provided = provided.as_bytes();
+    if expected.is_empty() || expected.len() != provided.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (left, right) in expected.iter().zip(provided.iter()) {
+        diff |= left ^ right;
+    }
+    diff == 0
 }
 
 /// Verifica token + scadenza. `now` esplicito per i test.

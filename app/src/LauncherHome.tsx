@@ -143,7 +143,11 @@ export function LauncherHome() {
               value={driver}
               placeholder={t("launcher.driverPlaceholder")}
               onChange={(event) => setDriver(event.target.value)}
-              onBlur={() => void api.setDriverName(driver)}
+              onBlur={() =>
+                void api
+                  .setDriverName(driver)
+                  .catch((problem) => setError(String(problem)))
+              }
             />
           </label>
         </div>
@@ -201,7 +205,12 @@ export function LauncherHome() {
                     </Button>
                     <Button
                       variant="ghost"
-                      onClick={() => void api.removeInvite(invite.link).then(setState)}
+                      onClick={() =>
+                        void api
+                          .removeInvite(invite.link)
+                          .then(setState)
+                          .catch((problem) => setError(String(problem)))
+                      }
                     >
                       {t("launcher.remove")}
                     </Button>

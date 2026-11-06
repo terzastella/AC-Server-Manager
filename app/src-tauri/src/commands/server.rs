@@ -159,6 +159,19 @@ pub fn external_servers() -> Vec<ExternalServer> {
         .collect()
 }
 
+/// Un processo è davvero acServer.exe solo se il percorso è assoluto e il nome
+/// del file coincide esattamente (case-insensitive). Un semplice suffisso
+/// accetterebbe anche `C:\x\notacServer.exe`.
+fn is_acserver_exe(path: &str) -> bool {
+    let path = std::path::Path::new(path);
+    path.is_absolute()
+        && path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(|name| name.eq_ignore_ascii_case("acServer.exe"))
+            .unwrap_or(false)
+}
+
 /// Termina un solo processo, quello scelto dall'utente, dopo aver verificato
 /// che sia ancora `acServer.exe`: il PID da solo può essere stato riusato.
 #[tauri::command]
@@ -170,7 +183,7 @@ pub fn stop_external_server(pid: u32) -> Result<u32, String> {
         ));
     }
     if let Some(path) = server_paths().remove(&pid) {
-        if !path.is_empty() && !path.to_lowercase().ends_with("acserver.exe") {
+        if !path.is_empty() && !is_acserver_exe(&path) {
             return Err(messages::tr(
                 &format!("rifiutato: il PID {} non è acServer.exe", pid),
                 &format!("refused: PID {} is not acServer.exe", pid),
@@ -403,4 +416,20 @@ pub(crate) fn backup_cfg(state: &AppState) -> Result<String, String> {
         }
     }
     Ok(destination.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_real_acserver_exe_is_accepted() {
+        assert!(is_acserver_exe(r"C:\AC\server\acServer.exe"));
+        assert!(is_acserver_exe(r"C:\AC\server\ACSERVER.EXE"));
+        // suffisso simile ma nome diverso, oppure percorso relativo
+        assert!(!is_acserver_exe(r"C:\AC\server\notacServer.exe"));
+        assert!(!is_acserver_exe(r"C:\AC\server\acServer.exe.bak"));
+        assert!(!is_acserver_exe("acServer.exe"));
+        assert!(!is_acserver_exe(""));
+    }
 }

@@ -361,6 +361,11 @@ impl ReserveFailure {
 fn reserve(state: &AppState, body: &serde_json::Value) -> Result<usize, ReserveFailure> {
     let reservation = parse_reserve(body).map_err(ReserveFailure::Invalid)?;
     let car = reservation.car.clone();
+
+    // Il lock copre anche la lettura di server_cfg.ini: una configurazione
+    // appena salvata dal Manager non può essere aggirata da una prenotazione
+    // validata su quella vecchia.
+    let _guard = commands::entry_lock().lock().unwrap();
     let sections = commands::config_sections(state);
     let available = commands::used_cars(&sections);
     if !available.iter().any(|id| id.eq_ignore_ascii_case(&car)) {
@@ -379,8 +384,7 @@ fn reserve(state: &AppState, body: &serde_json::Value) -> Result<usize, ReserveF
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(0);
 
-    // stesso lock del salvataggio manuale degli slot
-    let _guard = commands::entry_lock().lock().unwrap();
+    // il lock è già preso sopra, prima di leggere la configurazione
     let path = state.cfg_dir().join("entry_list.ini");
     let base = std::fs::read_to_string(&path).map_err(|error| {
         ReserveFailure::Internal(format!("entry_list.ini non leggibile: {}", error))

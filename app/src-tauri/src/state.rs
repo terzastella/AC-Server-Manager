@@ -151,7 +151,7 @@ impl AppState {
         // Manager e Launcher sono due processi: prima di scrivere si rilegge il
         // file e si toccano solo i campi di competenza, così nessuno cancella
         // le modifiche dell'altro.
-        let _file_lock = FileLock::acquire(&path)?;
+        let _file_lock = SettingsLock::acquire(&path)?;
         let disk = match fs::read_to_string(&path) {
             Ok(text) => {
                 let text = text
@@ -212,75 +212,129 @@ fn merge_for_process(launcher: bool, disk: Settings, mine: Settings) -> Settings
     merged
 }
 
-/// Lock tra processi tramite file: evita che Manager e Launcher leggano e
-/// riscrivano nello stesso istante. Il file contiene un token del proprietario,
-/// così un processo non cancella il lock di un altro; un lock più vecchio di
-/// 10 secondi viene accantonato con una rinomina atomica.
-struct FileLock {
-    path: PathBuf,
-    token: String,
-}
+/// Lock tra processi per `settings.json`.
+/// Su Windows è un mutex nominato: esclusione reale, rilasciata dal sistema
+/// anche se il processo termina di colpo. Altrove si usa un file di lock.
+#[cfg(windows)]
+mod settings_lock {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows_sys::Win32::System::Threading::{CreateMutexW, ReleaseMutex, WaitForSingleObject};
 
-impl FileLock {
-    fn acquire(target: &Path) -> Result<Self, String> {
-        let path = target.with_file_name("settings.lock");
-        let token = format!(
-            "{}:{}",
-            std::process::id(),
-            PERSIST_SEQ.fetch_add(1, Ordering::Relaxed)
-        );
-        for _ in 0..100 {
-            match fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&path)
-            {
-                Ok(mut file) => {
-                    use std::io::Write as _;
-                    let _ = file.write_all(token.as_bytes());
-                    return Ok(Self { path, token });
-                }
-                Err(error) if error.kind() == ErrorKind::AlreadyExists => {
-                    let stale = fs::metadata(&path)
-                        .and_then(|meta| meta.modified())
-                        .ok()
-                        .and_then(|time| time.elapsed().ok())
-                        .map(|age| age.as_secs() > 10)
-                        .unwrap_or(false);
-                    if stale {
-                        // rinomina atomica: solo un processo se ne appropria, e
-                        // il vecchio proprietario non potrà cancellare il nuovo
-                        let tomb = path.with_file_name(format!(
-                            "settings.lock.stale.{}",
-                            PERSIST_SEQ.fetch_add(1, Ordering::Relaxed)
-                        ));
-                        let _ = fs::rename(&path, &tomb);
-                        let _ = fs::remove_file(&tomb);
-                        continue;
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(20));
-                }
-                Err(error) => return Err(format!("{}: {}", path.display(), error)),
+    const WAIT_TIMEOUT: u32 = 0x0000_0102;
+    const WAIT_FAILED: u32 = 0xFFFF_FFFF;
+
+    pub struct SettingsLock(HANDLE);
+
+    impl SettingsLock {
+        pub fn acquire(_target: &std::path::Path) -> Result<Self, String> {
+            let name: Vec<u16> = OsStr::new("Local\\ACServerControl-settings")
+                .encode_wide()
+                .chain(std::iter::once(0))
+                .collect();
+            let handle = unsafe { CreateMutexW(std::ptr::null(), 0, name.as_ptr()) };
+            if handle.is_null() {
+                return Err("mutex delle impostazioni non creato".into());
+            }
+            let wait = unsafe { WaitForSingleObject(handle, 2000) };
+            if wait == WAIT_TIMEOUT {
+                unsafe { CloseHandle(handle) };
+                return Err(crate::messages::tr(
+                    "impostazioni in uso da un'altra istanza",
+                    "settings are being written by another instance",
+                ));
+            }
+            if wait == WAIT_FAILED {
+                unsafe { CloseHandle(handle) };
+                return Err("attesa del mutex delle impostazioni fallita".into());
+            }
+            Ok(Self(handle))
+        }
+    }
+
+    impl Drop for SettingsLock {
+        fn drop(&mut self) {
+            unsafe {
+                ReleaseMutex(self.0);
+                CloseHandle(self.0);
             }
         }
-        Err(crate::messages::tr(
-            "impostazioni in uso da un'altra istanza",
-            "settings are being written by another instance",
-        ))
     }
 }
 
-impl Drop for FileLock {
-    fn drop(&mut self) {
-        // si rimuove solo il proprio lock, mai quello subentrato a un timeout
-        if fs::read_to_string(&self.path)
-            .map(|content| content == self.token)
-            .unwrap_or(false)
-        {
-            let _ = fs::remove_file(&self.path);
+#[cfg(not(windows))]
+mod settings_lock {
+    use std::fs;
+    use std::io::ErrorKind;
+    use std::path::{Path, PathBuf};
+
+    pub struct SettingsLock {
+        path: PathBuf,
+        token: String,
+    }
+
+    impl SettingsLock {
+        pub fn acquire(target: &Path) -> Result<Self, String> {
+            let path = target.with_file_name("settings.lock");
+            let token = format!(
+                "{}:{}",
+                std::process::id(),
+                PERSIST_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            );
+            for _ in 0..100 {
+                match fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&path)
+                {
+                    Ok(mut file) => {
+                        use std::io::Write as _;
+                        let _ = file.write_all(token.as_bytes());
+                        return Ok(Self { path, token });
+                    }
+                    Err(error) if error.kind() == ErrorKind::AlreadyExists => {
+                        let stale = fs::metadata(&path)
+                            .and_then(|meta| meta.modified())
+                            .ok()
+                            .and_then(|time| time.elapsed().ok())
+                            .map(|age| age.as_secs() > 10)
+                            .unwrap_or(false);
+                        if stale {
+                            let tomb = path.with_file_name(format!(
+                                "settings.lock.stale.{}",
+                                super::PERSIST_SEQ
+                                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                            ));
+                            let _ = fs::rename(&path, &tomb);
+                            let _ = fs::remove_file(&tomb);
+                            continue;
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(20));
+                    }
+                    Err(error) => return Err(format!("{}: {}", path.display(), error)),
+                }
+            }
+            Err(crate::messages::tr(
+                "impostazioni in uso da un'altra istanza",
+                "settings are being written by another instance",
+            ))
+        }
+    }
+
+    impl Drop for SettingsLock {
+        fn drop(&mut self) {
+            if fs::read_to_string(&self.path)
+                .map(|content| content == self.token)
+                .unwrap_or(false)
+            {
+                let _ = fs::remove_file(&self.path);
+            }
         }
     }
 }
+
+use settings_lock::SettingsLock;
 
 pub fn settings_path(exe: &Path) -> PathBuf {
     exe.parent()
@@ -366,6 +420,20 @@ mod tests {
         let settings: InviteSettings = serde_json::from_str(json).expect("json valido");
         assert_eq!(settings.api_bind, "0.0.0.0");
         assert!(settings.expires_at.is_none());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn settings_lock_is_released() {
+        let dir = std::env::temp_dir().join(format!("acsc-lock-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("cartella");
+        let target = dir.join("settings.json");
+        {
+            let _lock = SettingsLock::acquire(&target).expect("primo lock");
+        }
+        let _lock = SettingsLock::acquire(&target).expect("lock dopo il rilascio");
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

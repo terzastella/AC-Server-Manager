@@ -44,6 +44,9 @@ pub fn save_preset(state: State<AppState>, name: String) -> Result<String, Strin
     }
     let destination = state.server_dir().join("presets").join(&safe);
     fs::create_dir_all(&destination).map_err(|error| error.to_string())?;
+    // lock condiviso: il preset cattura i tre file nello stesso istante,
+    // senza prenotazioni o salvataggi a metà
+    let _guard = entry_lock().lock().unwrap();
     let source = state.cfg_dir();
     for file in ["server_cfg.ini", "entry_list.ini", "welcome.txt"] {
         let from = source.join(file);

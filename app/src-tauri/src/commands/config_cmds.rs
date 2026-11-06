@@ -39,9 +39,10 @@ pub struct CarSlot {
 #[tauri::command]
 pub fn read_entry_list(state: State<AppState>) -> Result<Vec<CarSlot>, String> {
     let path = state.cfg_dir().join("entry_list.ini");
+    // lettura e impronta sotto lo stesso lock: una prenotazione non può
+    // infilarsi tra le due e far sembrare aggiornata una lista vecchia
+    let _guard = entry_lock().lock().unwrap();
     let text = read_text(&path)?;
-    // ricordiamo la versione letta: un salvataggio su una lista piu' vecchia
-    // non deve cancellare le prenotazioni arrivate nel frattempo
     *state.entry_stamp.lock().unwrap() = Some(file_stamp(&path));
     let mut slots = Vec::new();
     for section in ini::parse(&text).sections {

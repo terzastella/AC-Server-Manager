@@ -4,6 +4,24 @@ Le modifiche importanti del progetto. Formato basato su
 [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni
 [SemVer](https://semver.org/lang/it/).
 
+## [1.0.6] - 2026-11-06
+
+### Corretto
+
+- **Lettura degli slot**: contenuto e impronta della lista vengono letti sotto
+  lo stesso lock, quindi una prenotazione non può infilarsi tra le due e far
+  sembrare aggiornata una lista vecchia.
+- **Prenotazioni**: la configurazione (`CARS`, `MAX_CLIENTS`, pista) viene letta
+  e validata sotto lo stesso lock della scrittura: una modifica appena salvata
+  non può essere aggirata.
+- **Pagina Slot**: se arriva una prenotazione mentre il draft è modificato, il
+  draft non viene più sostituito. Compare un avviso con "Scarta e ricarica".
+- **Preset**: anche il salvataggio di un preset usa il lock, così cattura i tre
+  file nello stesso istante.
+- **Lock delle impostazioni**: su Windows è un mutex nominato, con esclusione
+  reale e rilascio automatico se il processo termina di colpo (niente più
+  scadenza dopo 10 secondi).
+
 ## [1.0.5] - 2026-11-06
 
 ### Corretto
@@ -153,6 +171,7 @@ Prima release pubblica.
 - I binari non contengono più i percorsi assoluti della macchina di compilazione:
   `build.ps1` riscrive il profilo utente in `/build` (`--remap-path-prefix`).
 
+[1.0.6]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.6
 [1.0.5]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.5
 [1.0.4]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.4
 [1.0.3]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.3

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import { useApp } from "../store";
 import { Badge, Button, Card, Empty } from "../components/ui";
@@ -23,15 +23,41 @@ export function Slots() {
   const { t } = useT();
   const { slots, config, content, settings, refreshSlots, refreshContent, refreshConfig, run, notify } = useApp();
   const [draft, setDraft] = useState<CarSlot[]>([]);
+  // ultima versione ricevuta dal server (non modificata dall'utente)
+  const syncedRef = useRef<CarSlot[]>([]);
+  const draftRef = useRef<CarSlot[]>([]);
+  const [pendingRemote, setPendingRemote] = useState(false);
   const [library, setLibrary] = useState<ContentLibrary | null>(null);
   const [modelPicker, setModelPicker] = useState<number | null>(null);
   const [skinPicker, setSkinPicker] = useState<number | null>(null);
   const [addCars, setAddCars] = useState(false);
   const [addTrack, setAddTrack] = useState(false);
 
+  const sameSlots = (left: CarSlot[], right: CarSlot[]) =>
+    JSON.stringify(left) === JSON.stringify(right);
+
   useEffect(() => {
-    setDraft(slots.map((slot) => ({ ...slot })));
+    draftRef.current = draft;
+  }, [draft]);
+
+  useEffect(() => {
+    const next = slots.map((slot) => ({ ...slot }));
+    if (sameSlots(draftRef.current, syncedRef.current)) {
+      syncedRef.current = next;
+      setDraft(next);
+      setPendingRemote(false);
+    } else if (!sameSlots(next, syncedRef.current)) {
+      // prenotazione arrivata mentre stai modificando: non cancellare il draft
+      setPendingRemote(true);
+    }
   }, [slots]);
+
+  const reloadFromServer = () => {
+    // scarta le modifiche locali e adotta quello che c'e' su disco
+    syncedRef.current = draftRef.current;
+    setPendingRemote(false);
+    void refreshSlots();
+  };
 
   useEffect(() => {
     void api.contentLibrary().then(setLibrary).catch(() => setLibrary(null));
@@ -183,6 +209,8 @@ export function Slots() {
       const addedSlots = nextSlots.length - draft.length;
       if (addedSlots > 0) {
         await api.saveSlots(nextSlots);
+        syncedRef.current = nextSlots.map((slot) => ({ ...slot }));
+        setPendingRemote(false);
         await refreshSlots();
       }
 
@@ -269,13 +297,23 @@ export function Slots() {
         </span>
       </div>
 
+      {pendingRemote && (
+        <div className="banner banner-amber">
+          <strong>{t("slots.pendingTitle")}</strong>
+          <span>{t("slots.pendingText")}</span>
+          <Button variant="ghost" onClick={reloadFromServer}>
+            {t("slots.pendingReload")}
+          </Button>
+        </div>
+      )}
+
       <Card
         title={t("slots.title", { n: draft.length })}
         subtitle={t("slots.subtitle", { max: maxClients || "—", cars: carsFromConfig.length })}
         actions={
           <div className="row gap">
             <Button onClick={addSlot}>{t("slots.addSlot")}</Button>
-            <Button variant="ghost" onClick={() => void refreshSlots()}>
+            <Button variant="ghost" onClick={reloadFromServer}>
               {t("slots.reload")}
             </Button>
             <Button
@@ -283,6 +321,8 @@ export function Slots() {
               onClick={() =>
                 void run("save-slots", async () => {
                   await api.saveSlots(draft);
+                  syncedRef.current = draft.map((slot) => ({ ...slot }));
+                  setPendingRemote(false);
                   await refreshSlots();
                   await refreshContent();
                   notify(t("slots.saved"), "success");

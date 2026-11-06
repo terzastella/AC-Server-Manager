@@ -14,15 +14,18 @@ pub struct JoinArgs {
 }
 
 /// Token casuale da un CSPRNG: 32 byte in base64 url-safe senza padding.
-/// Se il generatore di sistema fallisce restituisce una stringa vuota: un
-/// token vuoto non combacia mai e l'API risponde 403 a chiunque.
-pub fn new_token() -> String {
+/// L'errore viene propagato: meglio un messaggio in interfaccia che un
+/// invito salvato con un token vuoto che nessuno può usare.
+pub fn new_token() -> Result<String, String> {
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
     let mut bytes = [0u8; 32];
-    match getrandom::getrandom(&mut bytes) {
-        Ok(()) => URL_SAFE_NO_PAD.encode(bytes),
-        Err(_) => String::new(),
-    }
+    getrandom::getrandom(&mut bytes).map_err(|error| {
+        messages::tr(
+            &format!("generatore casuale non disponibile: {}", error),
+            &format!("random generator unavailable: {}", error),
+        )
+    })?;
+    Ok(URL_SAFE_NO_PAD.encode(bytes))
 }
 
 fn encode(value: &str) -> String {
@@ -68,6 +71,18 @@ pub fn valid_host(host: &str) -> bool {
         && host
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == ':' || c == '-' || c == '_')
+}
+
+/// URL dell'API: un IPv6 va racchiuso tra parentesi quadre, altrimenti il
+/// primo `:` viene letto come separatore di porta.
+pub fn api_url(host: &str, port: u16, path: &str) -> String {
+    let host = host.trim();
+    let authority = if host.contains(':') && !host.starts_with('[') {
+        format!("[{}]", host)
+    } else {
+        host.to_string()
+    };
+    format!("http://{}:{}{}", authority, port, path)
 }
 
 pub fn build_link(ip: &str, http_port: u16, invite: &crate::state::InviteSettings) -> String {
@@ -152,7 +167,7 @@ mod tests {
 
     #[test]
     fn token_is_random_base64url() {
-        let token = new_token();
+        let token = new_token().expect("generatore disponibile");
         // 32 byte -> 43 caratteri base64url senza padding
         assert_eq!(token.len(), 43);
         assert!(token
@@ -162,10 +177,31 @@ mod tests {
 
     #[test]
     fn tokens_do_not_repeat() {
-        let first = new_token();
-        let second = new_token();
+        let first = new_token().expect("generatore disponibile");
+        let second = new_token().expect("generatore disponibile");
         assert_ne!(first, second);
         assert!(!first.is_empty());
+    }
+
+    #[test]
+    fn api_url_brackets_ipv6() {
+        assert_eq!(
+            api_url("192.168.1.10", 8082, "/api/server"),
+            "http://192.168.1.10:8082/api/server"
+        );
+        assert_eq!(
+            api_url("::1", 8082, "/api/server"),
+            "http://[::1]:8082/api/server"
+        );
+        assert_eq!(
+            api_url("2001:db8::5", 9000, "/x"),
+            "http://[2001:db8::5]:9000/x"
+        );
+        assert_eq!(api_url("[::1]", 8082, "/x"), "http://[::1]:8082/x");
+        assert_eq!(
+            api_url("vpn.example.com", 8082, "/x"),
+            "http://vpn.example.com:8082/x"
+        );
     }
 
     #[test]

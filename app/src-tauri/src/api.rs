@@ -479,10 +479,21 @@ fn handle(app: &AppHandle, stream: TcpStream) {
     serve_connection(stream, &AppBackend(app));
 }
 
+/// Indirizzo di ascolto valido, senza scappatoie: un valore corrotto non deve
+/// aprire l'API su tutte le interfacce di nascosto.
+fn parse_bind(bind: &str) -> Result<IpAddr, String> {
+    bind.trim().parse::<IpAddr>().map_err(|_| {
+        messages::tr(
+            &format!("indirizzo di ascolto non valido: {}", bind.trim()),
+            &format!("invalid listen address: {}", bind.trim()),
+        )
+    })
+}
+
 /// Avvia l'API su `bind` (default tutte le interfacce), provando le porte
 /// successive se occupata.
 pub fn start(app: AppHandle, requested: u16, bind: &str) -> Result<u16, String> {
-    let ip: IpAddr = bind.parse().unwrap_or(IpAddr::from([0, 0, 0, 0]));
+    let ip = parse_bind(bind)?;
     let mut last_error = String::new();
     for port in requested..requested.saturating_add(20) {
         match TcpListener::bind((ip, port)) {
@@ -530,6 +541,20 @@ mod tests {
         assert!(!token_matches("abc", ""));
         assert!(!token_matches("abc", "abd"));
         assert!(token_matches("abc", "abc"));
+    }
+
+    #[test]
+    fn bind_must_parse() {
+        assert_eq!(
+            parse_bind("192.168.1.5").unwrap().to_string(),
+            "192.168.1.5"
+        );
+        assert_eq!(parse_bind(" 0.0.0.0 ").unwrap().to_string(), "0.0.0.0");
+        assert_eq!(parse_bind("::1").unwrap().to_string(), "::1");
+        // un valore corrotto non deve diventare 0.0.0.0
+        assert!(parse_bind("").is_err());
+        assert!(parse_bind("192.168.1").is_err());
+        assert!(parse_bind("localhost").is_err());
     }
 
     #[test]

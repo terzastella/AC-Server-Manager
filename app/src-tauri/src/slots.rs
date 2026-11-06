@@ -93,12 +93,24 @@ pub fn apply_reservation(
         .map(|(index, _)| index)
         .collect();
 
-    let already = car_positions.iter().copied().find(|index| {
+    // Il GUID (SteamID64) identifica il giocatore: stesso GUID = stesso slot,
+    // anche se cambia nome. Un nome uguale con GUID diverso è un'altra persona
+    // e non deve rubare lo slot. Uno slot prenotato solo per nome (senza GUID)
+    // viene invece adottato dal giocatore che si presenta con quel nome.
+    let guid = reservation.guid.trim();
+    let name_owner = |index: &usize| {
         let section = &sections[*index];
-        entry_value(section, "DRIVERNAME") == driver
-            || (!reservation.guid.trim().is_empty()
-                && entry_value(section, "GUID").eq_ignore_ascii_case(reservation.guid.trim()))
-    });
+        entry_value(section, "GUID").is_empty() && entry_value(section, "DRIVERNAME") == driver
+    };
+    let already = if guid.is_empty() {
+        car_positions.iter().copied().find(name_owner)
+    } else {
+        car_positions
+            .iter()
+            .copied()
+            .find(|index| entry_value(&sections[*index], "GUID").eq_ignore_ascii_case(guid))
+            .or_else(|| car_positions.iter().copied().find(name_owner))
+    };
     let same_car = car_positions
         .iter()
         .copied()
@@ -242,6 +254,32 @@ mod tests {
         assert_eq!(slot, again);
         assert_eq!(text2.matches("GUID=76561198000000001").count(), 1);
         assert_eq!(text2.matches("DRIVERNAME=").count(), 2); // slot 0 + slot 1 (Mario)
+    }
+
+    #[test]
+    fn same_name_different_steam_id_gets_another_slot() {
+        // "Mario" occupa già lo slot 1 con un altro GUID: l'omonimo non lo prende.
+        let mut other = reservation("Mario", "bmw_z4_gt3", "one");
+        other.guid = "76561198000000002".into();
+        let (out, slot) = apply_reservation(BASE, 4, &other).unwrap();
+
+        assert_eq!(slot, 0);
+        assert_eq!(out.matches("DRIVERNAME=Mario").count(), 2);
+        assert!(out.contains("GUID=76561198000000002"));
+        assert!(out.contains("GUID=abc"));
+    }
+
+    #[test]
+    fn slot_reserved_by_name_is_adopted_with_steam_id() {
+        // prenotazione vecchia, solo nome: chi arriva con quel nome la prende.
+        let base = "[CAR_0]\r\nMODEL=bmw_z4_gt3\r\nDRIVERNAME=Mario\r\nGUID=\r\n";
+        let mut mario = reservation("Mario", "bmw_z4_gt3", "one");
+        mario.guid = "76561198000000003".into();
+        let (out, slot) = apply_reservation(base, 4, &mario).unwrap();
+
+        assert_eq!(slot, 0);
+        assert_eq!(out.matches("[CAR_").count(), 1);
+        assert!(out.contains("GUID=76561198000000003"));
     }
 
     #[test]

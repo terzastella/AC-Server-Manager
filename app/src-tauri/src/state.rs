@@ -17,20 +17,25 @@ pub struct InviteSettings {
     pub banner: String,
     pub api_port: u16,
     /// Interfaccia su cui ascolta l'API: "0.0.0.0" = tutte.
+    #[serde(default = "default_bind")]
     pub api_bind: String,
     /// Scadenza dell'invito (secondi Unix). `None` = nessuna scadenza.
     pub expires_at: Option<i64>,
+}
+
+fn default_bind() -> String {
+    "0.0.0.0".into()
 }
 
 impl Default for InviteSettings {
     fn default() -> Self {
         Self {
             name: "AC Server".into(),
-            token: crate::invite::new_token(),
+            token: crate::invite::new_token().unwrap_or_default(),
             accent: "#ff5a1f".into(),
             banner: String::new(),
             api_port: 8082,
-            api_bind: "0.0.0.0".into(),
+            api_bind: default_bind(),
             expires_at: None,
         }
     }
@@ -174,4 +179,31 @@ pub fn detect_server_dir(exe: &Path) -> Option<PathBuf> {
         current = dir.parent();
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn old_settings_without_bind_listen_on_all_interfaces() {
+        let json =
+            r##"{"name":"AC","token":"abc","accent":"#ff5a1f","banner":"","api_port":8082}"##;
+        let settings: InviteSettings = serde_json::from_str(json).expect("json valido");
+        assert_eq!(settings.api_bind, "0.0.0.0");
+        assert!(settings.expires_at.is_none());
+    }
+
+    #[test]
+    fn settings_file_with_bom_is_read() {
+        let dir = std::env::temp_dir().join(format!("acsc-state-{}", std::process::id()));
+        fs::create_dir_all(&dir).expect("cartella temporanea");
+        let path = dir.join("settings.json");
+        fs::write(&path, "\u{feff}{\"language\":\"en\"}").expect("scrittura");
+
+        let settings = load_settings(&dir.join("ACServerControl.exe"));
+        assert_eq!(settings.language, "en");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

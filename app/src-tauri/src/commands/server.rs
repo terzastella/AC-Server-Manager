@@ -119,14 +119,8 @@ pub struct ExternalServer {
     pub path: String,
 }
 
-/// Processi `acServer.exe` avviati fuori da questa app, con il percorso
-/// dell'eseguibile: l'interfaccia li mostra prima di terminare qualcosa.
-#[tauri::command]
-pub fn external_servers() -> Vec<ExternalServer> {
-    let pids = external_server_pids();
-    if pids.is_empty() {
-        return Vec::new();
-    }
+/// Percorso dell'eseguibile per PID, quando Windows lo rende leggibile.
+fn server_paths() -> std::collections::HashMap<u32, String> {
     let mut paths: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
     #[cfg(windows)]
     {
@@ -148,7 +142,16 @@ pub fn external_servers() -> Vec<ExternalServer> {
             }
         }
     }
-    pids.into_iter()
+    paths
+}
+
+/// Processi `acServer.exe` avviati fuori da questa app, con il percorso
+/// dell'eseguibile: l'interfaccia li mostra prima di terminare qualcosa.
+#[tauri::command]
+pub fn external_servers() -> Vec<ExternalServer> {
+    let mut paths = server_paths();
+    external_server_pids()
+        .into_iter()
         .map(|pid| ExternalServer {
             pid,
             path: paths.remove(&pid).unwrap_or_default(),
@@ -156,17 +159,42 @@ pub fn external_servers() -> Vec<ExternalServer> {
         .collect()
 }
 
+/// Termina un solo processo, quello scelto dall'utente, dopo aver verificato
+/// che sia ancora `acServer.exe`: il PID da solo può essere stato riusato.
 #[tauri::command]
-pub fn stop_external_server() -> Result<usize, String> {
-    let pids = external_server_pids();
-    for pid in &pids {
-        let mut command = Command::new("taskkill");
-        command.args(["/PID", &pid.to_string(), "/F"]);
-        #[cfg(windows)]
-        command.creation_flags(CREATE_NO_WINDOW);
-        let _ = command.output();
+pub fn stop_external_server(pid: u32) -> Result<u32, String> {
+    if !external_server_pids().contains(&pid) {
+        return Err(messages::tr(
+            "il processo non è più attivo",
+            "the process is no longer running",
+        ));
     }
-    Ok(pids.len())
+    if let Some(path) = server_paths().remove(&pid) {
+        if !path.is_empty() && !path.to_lowercase().ends_with("acserver.exe") {
+            return Err(messages::tr(
+                &format!("rifiutato: il PID {} non è acServer.exe", pid),
+                &format!("refused: PID {} is not acServer.exe", pid),
+            ));
+        }
+    }
+    let mut command = Command::new("taskkill");
+    command.args(["/PID", &pid.to_string(), "/F"]);
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+    match command.output() {
+        Ok(output) if output.status.success() => Ok(1),
+        Ok(output) => {
+            let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            Err(messages::tr(
+                &format!("impossibile terminare il PID {}: {}", pid, detail),
+                &format!("cannot terminate PID {}: {}", pid, detail),
+            ))
+        }
+        Err(error) => Err(messages::tr(
+            &format!("taskkill non avviato: {}", error),
+            &format!("taskkill failed to start: {}", error),
+        )),
+    }
 }
 
 #[tauri::command]

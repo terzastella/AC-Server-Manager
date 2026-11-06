@@ -138,7 +138,8 @@ pub(crate) fn apply_slots(base: &str, slots: &[CarSlot]) -> String {
 #[tauri::command]
 pub fn save_entry_list(state: State<AppState>, slots: Vec<CarSlot>) -> Result<String, String> {
     let path = state.cfg_dir().join("entry_list.ini");
-    let base = read_text(&path).unwrap_or_default();
+    // file assente = profilo nuovo (si crea), errore di lettura = si annulla
+    let base = read_text_or_empty(&path)?;
     let backup = backup_cfg(&state)?;
     let text = apply_slots(&base, &slots);
     write_text_atomic(&path, &text)?;

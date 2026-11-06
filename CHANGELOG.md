@@ -4,7 +4,37 @@ Le modifiche importanti del progetto. Formato basato su
 [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni
 [SemVer](https://semver.org/lang/it/).
 
-## [1.0.1] - 2026-11-06
+## [1.0.2] - 2026-11-06
+
+Correzioni emerse da una seconda revisione esterna.
+
+### Corretto
+
+- `entry_list.ini`: un errore di lettura non viene più scambiato per "file
+  vuoto" (solo un file assente vale come vuoto), quindi non si sovrascrive
+  più la lista slot quando il file è bloccato o illeggibile.
+- Slot: il GUID identifica il giocatore. Due omonimi con SteamID diversi non
+  finiscono più sullo stesso slot; uno slot prenotato solo per nome viene
+  adottato da chi arriva con quel nome.
+- Processi esterni: se ne termina uno solo, quello scelto, dopo aver
+  verificato che il PID sia ancora `acServer.exe`.
+- Token d'invito: se il CSPRNG fallisce l'errore arriva in interfaccia invece
+  di salvare un invito con token vuoto.
+- IPv6: gli indirizzi sono racchiusi tra parentesi quadre negli URL dell'API.
+
+### Sicurezza
+
+- Il launcher invia il token nell'header `Authorization: Bearer` e non più
+  nella query string o nel corpo JSON. Il server accetta ancora i vecchi
+  metodi per i launcher 1.0.0.
+- Un `api_bind` non valido non ricade più su `0.0.0.0`: l'API non parte e
+  l'errore finisce nel log.
+
+### Tecnico
+
+- File temporaneo di scrittura univoco per processo (`<file>.<pid>.tmp`).
+
+## [1.0.1] - 2026-11-05
 
 Release di sicurezza e integrità: nessuna funzione nuova.
 
@@ -53,4 +83,6 @@ Prima release pubblica.
 - I binari non contengono più i percorsi assoluti della macchina di compilazione:
   `build.ps1` riscrive il profilo utente in `/build` (`--remap-path-prefix`).
 
+[1.0.2]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.2
+[1.0.1]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.1
 [1.0.0]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.0

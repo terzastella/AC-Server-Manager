@@ -33,13 +33,29 @@ pub(crate) fn write_text(path: &Path, text: &str) -> Result<(), String> {
     fs::write(path, text).map_err(|error| format!("{}: {}", path.display(), error))
 }
 
+/// Come `read_text`, ma un file assente vale come vuoto: serve a creare un
+/// file nuovo. Ogni altro errore (permessi, I/O, encoding) viene propagato,
+/// altrimenti si sovrascriverebbe un contenuto esistente con una lista vuota.
+pub(crate) fn read_text_or_empty(path: &Path) -> Result<String, String> {
+    match fs::read_to_string(path) {
+        Ok(text) => Ok(text),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(error) => Err(format!("{}: {}", path.display(), error)),
+    }
+}
+
 /// Scrittura atomica: file temporaneo, rilettura di controllo, poi rename.
 /// Se qualcosa fallisce il file originale resta intatto.
 pub(crate) fn write_text_atomic(path: &Path, text: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
-    let temp = path.with_extension("ini.tmp");
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("cfg");
+    // nome univoco per processo: due scritture sullo stesso file non si pestano
+    let temp = path.with_file_name(format!("{}.{}.tmp", file_name, std::process::id()));
     fs::write(&temp, text).map_err(|error| format!("{}: {}", temp.display(), error))?;
     let written =
         fs::read_to_string(&temp).map_err(|error| format!("{}: {}", temp.display(), error))?;

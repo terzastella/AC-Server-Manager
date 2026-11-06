@@ -43,15 +43,14 @@ pub fn save_invite_settings(
     invite: InviteSettings,
 ) -> Result<InviteSettings, String> {
     validate_invite(&invite)?;
-    let mut settings = state.settings.lock().unwrap();
-    settings.invite = InviteSettings {
-        token: if invite.token.trim().is_empty() {
-            crate::invite::new_token()
-        } else {
-            invite.token.trim().to_string()
-        },
-        ..invite
+    // la generazione può fallire: meglio un errore che un invito con token vuoto
+    let token = if invite.token.trim().is_empty() {
+        crate::invite::new_token()?
+    } else {
+        invite.token.trim().to_string()
     };
+    let mut settings = state.settings.lock().unwrap();
+    settings.invite = InviteSettings { token, ..invite };
     let saved = settings.invite.clone();
     drop(settings);
     state.persist();
@@ -59,13 +58,14 @@ pub fn save_invite_settings(
 }
 
 #[tauri::command]
-pub fn regenerate_invite_token(state: State<AppState>) -> InviteSettings {
+pub fn regenerate_invite_token(state: State<AppState>) -> Result<InviteSettings, String> {
+    let token = crate::invite::new_token()?;
     let mut settings = state.settings.lock().unwrap();
-    settings.invite.token = crate::invite::new_token();
+    settings.invite.token = token;
     let saved = settings.invite.clone();
     drop(settings);
     state.persist();
-    saved
+    Ok(saved)
 }
 
 #[tauri::command]
@@ -192,13 +192,14 @@ pub async fn remote_server_info(
             "invalid server address",
         ));
     }
-    let url = format!("http://{}:{}/api/server?token={}", host, api_port, token);
+    let url = crate::invite::api_url(&host, api_port, "/api/server");
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(4))
         .build()
         .map_err(|error| error.to_string())?;
     let response = client
         .get(url)
+        .bearer_auth(&token)
         .send()
         .await
         .map_err(|error| format!("server non raggiungibile: {}", error))?;
@@ -228,15 +229,15 @@ pub async fn remote_reserve(
             "invalid server address",
         ));
     }
-    let url = format!("http://{}:{}/api/reserve", host, api_port);
+    let url = crate::invite::api_url(&host, api_port, "/api/reserve");
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(6))
         .build()
         .map_err(|error| error.to_string())?;
     let response = client
         .post(url)
+        .bearer_auth(&token)
         .json(&serde_json::json!({
-            "token": token,
             "driver": driver,
             "car": car,
             "skin": skin,

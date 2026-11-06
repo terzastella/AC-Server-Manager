@@ -15,7 +15,7 @@ export const dashboard = defineNamespace({
     "dashboard.externalTitle": "Server AC già attivo",
     "dashboard.externalText":
       "Un acServer avviato fuori da questa app occupa le porte di gioco e HTTP. Fermalo per poter avviare il server da qui.",
-    "dashboard.stopExternal": "Ferma processo esterno",
+    "dashboard.stopThis": "Ferma",
     "dashboard.externalStopped": "Processi esterni terminati: {n}",
     "dashboard.externalUnknownPath": "percorso non disponibile",
     "dashboard.missingTitle": "Contenuti mancanti",
@@ -81,7 +81,7 @@ export const dashboard = defineNamespace({
     "dashboard.externalTitle": "AC server already running",
     "dashboard.externalText":
       "An acServer started outside this app is holding the game and HTTP ports. Stop it to start the server from here.",
-    "dashboard.stopExternal": "Stop external process",
+    "dashboard.stopThis": "Stop",
     "dashboard.externalStopped": "External processes terminated: {n}",
     "dashboard.externalUnknownPath": "path unavailable",
     "dashboard.missingTitle": "Missing content",

@@ -48,7 +48,7 @@ export const api = {
   start: () => invoke<ServerStatus>("start_server"),
   stop: () => invoke<ServerStatus>("stop_server"),
   restart: () => invoke<ServerStatus>("restart_server"),
-  stopExternal: () => invoke<number>("stop_external_server"),
+  stopExternal: (pid: number) => invoke<number>("stop_external_server", { pid }),
   externalServers: () => invoke<ExternalServer[]>("external_servers"),
 
   logs: () => invoke<LogEntry[]>("get_logs"),

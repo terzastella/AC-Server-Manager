@@ -219,24 +219,30 @@ export function Dashboard() {
             <ul className="external-list">
               {externals.map((item) => (
                 <li key={item.pid}>
-                  PID {item.pid} — {item.path || t("dashboard.externalUnknownPath")}
+                  <span>
+                    PID {item.pid} — {item.path || t("dashboard.externalUnknownPath")}
+                  </span>
+                  <Button
+                    variant="danger"
+                    onClick={() =>
+                      void run(`foreign-${item.pid}`, async () => {
+                        const count = await api.stopExternal(item.pid);
+                        notify(t("dashboard.externalStopped", { n: count }), "success");
+                        const left = await api.externalServers();
+                        setExternals(left);
+                        if (left.length === 0) {
+                          setExternal(false);
+                          await refreshStatus();
+                        }
+                      })
+                    }
+                  >
+                    {t("dashboard.stopThis")}
+                  </Button>
                 </li>
               ))}
             </ul>
           )}
-          <Button
-            variant="danger"
-            onClick={() =>
-              void run("foreign", async () => {
-                const count = await api.stopExternal();
-                setExternal(false);
-                await refreshStatus();
-                notify(t("dashboard.externalStopped", { n: count }), "success");
-              })
-            }
-          >
-            {t("dashboard.stopExternal")}
-          </Button>
         </div>
       )}
 

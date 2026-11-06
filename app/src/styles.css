@@ -422,6 +422,22 @@ select { cursor: pointer; }
 .banner-amber { border-color: rgba(245, 185, 66, 0.32); background: var(--amber-soft); color: #e9c98c; }
 .banner-red { border-color: rgba(255, 93, 93, 0.32); background: var(--red-soft); color: #ffb3b3; }
 .banner-blue { border-color: rgba(86, 168, 255, 0.28); background: var(--blue-soft); color: #b9d7ff; }
+.banner .external-list {
+  flex: 1 1 100%;
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.banner .external-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.banner .external-list li span { flex: 1; overflow-wrap: anywhere; }
 
 /* ------------------------------------------------------------ tables */
 

@@ -103,6 +103,9 @@ pub struct AppState {
     pub join_uri: Mutex<Option<String>>,
     pub launcher_mode: bool,
     pub profiles: Mutex<crate::profiles::ProfileIndex>,
+    /// Impronta di entry_list.ini al momento dell'ultima lettura fatta
+    /// dall'interfaccia: serve a non sovrascrivere prenotazioni arrivate dopo.
+    pub entry_stamp: Mutex<Option<u64>>,
 }
 
 impl AppState {
@@ -149,15 +152,25 @@ impl AppState {
         // file e si toccano solo i campi di competenza, così nessuno cancella
         // le modifiche dell'altro.
         let _file_lock = FileLock::acquire(&path)?;
-        let disk = fs::read_to_string(&path)
-            .ok()
-            .map(|text| {
-                text.strip_prefix('\u{feff}')
+        let disk = match fs::read_to_string(&path) {
+            Ok(text) => {
+                let text = text
+                    .strip_prefix('\u{feff}')
                     .map(str::to_string)
-                    .unwrap_or(text)
-            })
-            .and_then(|text| serde_json::from_str::<Settings>(&text).ok())
-            .unwrap_or_default();
+                    .unwrap_or(text);
+                serde_json::from_str::<Settings>(&text).map_err(|error| {
+                    crate::messages::tr(
+                        &format!(
+                            "settings.json non valido ({}): salvataggio annullato",
+                            error
+                        ),
+                        &format!("invalid settings.json ({}): save aborted", error),
+                    )
+                })?
+            }
+            Err(error) if error.kind() == ErrorKind::NotFound => Settings::default(),
+            Err(error) => return Err(format!("{}: {}", path.display(), error)),
+        };
         let merged = merge_for_process(self.launcher_mode, disk, snapshot);
 
         let text = serde_json::to_string_pretty(&merged)
@@ -200,34 +213,50 @@ fn merge_for_process(launcher: bool, disk: Settings, mine: Settings) -> Settings
 }
 
 /// Lock tra processi tramite file: evita che Manager e Launcher leggano e
-/// riscrivano nello stesso istante. Un lock più vecchio di 10 secondi è
-/// considerato rimasto appeso e viene rimosso.
+/// riscrivano nello stesso istante. Il file contiene un token del proprietario,
+/// così un processo non cancella il lock di un altro; un lock più vecchio di
+/// 10 secondi viene accantonato con una rinomina atomica.
 struct FileLock {
     path: PathBuf,
+    token: String,
 }
 
 impl FileLock {
     fn acquire(target: &Path) -> Result<Self, String> {
         let path = target.with_file_name("settings.lock");
+        let token = format!(
+            "{}:{}",
+            std::process::id(),
+            PERSIST_SEQ.fetch_add(1, Ordering::Relaxed)
+        );
         for _ in 0..100 {
             match fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)
                 .open(&path)
             {
-                Ok(_) => return Ok(Self { path }),
+                Ok(mut file) => {
+                    use std::io::Write as _;
+                    let _ = file.write_all(token.as_bytes());
+                    return Ok(Self { path, token });
+                }
                 Err(error) if error.kind() == ErrorKind::AlreadyExists => {
-                    if let Ok(metadata) = fs::metadata(&path) {
-                        let stale = metadata
-                            .modified()
-                            .ok()
-                            .and_then(|time| time.elapsed().ok())
-                            .map(|age| age.as_secs() > 10)
-                            .unwrap_or(false);
-                        if stale {
-                            let _ = fs::remove_file(&path);
-                            continue;
-                        }
+                    let stale = fs::metadata(&path)
+                        .and_then(|meta| meta.modified())
+                        .ok()
+                        .and_then(|time| time.elapsed().ok())
+                        .map(|age| age.as_secs() > 10)
+                        .unwrap_or(false);
+                    if stale {
+                        // rinomina atomica: solo un processo se ne appropria, e
+                        // il vecchio proprietario non potrà cancellare il nuovo
+                        let tomb = path.with_file_name(format!(
+                            "settings.lock.stale.{}",
+                            PERSIST_SEQ.fetch_add(1, Ordering::Relaxed)
+                        ));
+                        let _ = fs::rename(&path, &tomb);
+                        let _ = fs::remove_file(&tomb);
+                        continue;
                     }
                     std::thread::sleep(std::time::Duration::from_millis(20));
                 }
@@ -243,7 +272,13 @@ impl FileLock {
 
 impl Drop for FileLock {
     fn drop(&mut self) {
-        let _ = fs::remove_file(&self.path);
+        // si rimuove solo il proprio lock, mai quello subentrato a un timeout
+        if fs::read_to_string(&self.path)
+            .map(|content| content == self.token)
+            .unwrap_or(false)
+        {
+            let _ = fs::remove_file(&self.path);
+        }
     }
 }
 

@@ -31,6 +31,21 @@ jobs:
         working-directory: app
         run: npm ci
 
+      - name: Frontend checks
+        working-directory: app
+        shell: pwsh
+        run: |
+          node scripts/check-i18n.mjs
+          npx tsc --noEmit
+
+      - name: Rust checks
+        working-directory: app/src-tauri
+        shell: pwsh
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets --all-features -- -D warnings
+          cargo test --lib
+
       - name: Build both executables
         working-directory: app
         shell: pwsh

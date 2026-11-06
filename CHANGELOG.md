@@ -4,6 +4,31 @@ Le modifiche importanti del progetto. Formato basato su
 [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni
 [SemVer](https://semver.org/lang/it/).
 
+## [1.0.5] - 2026-11-06
+
+### Corretto
+
+- **File di configurazione condivisi**: prenotazioni HTTP, salvataggio manuale
+  di slot e configurazione, caricamento dei preset usano lo stesso lock, quindi
+  non si sovrascrivono a vicenda.
+- **Lista slot obsoleta**: se il file è cambiato dopo l'ultima lettura
+  dell'interfaccia (per esempio per una prenotazione arrivata nel frattempo),
+  il salvataggio viene rifiutato con un messaggio che chiede di ricaricare,
+  invece di cancellare la prenotazione.
+- **File temporanei**: nome univoco per ogni singola scrittura, non solo per
+  processo.
+- **`settings.json`**: se il file esiste ma non è leggibile o non è valido, il
+  salvataggio si interrompe e il contenuto resta intatto (prima si ripartiva
+  dai valori predefiniti).
+- **Lock tra processi**: il file di lock contiene un token del proprietario,
+  così un processo non cancella il lock di un altro subentrato dopo un timeout.
+- **API**: il tetto di 32 connessioni viene applicato prima di creare il
+  thread, non dopo.
+- **Profili**: se l'indice è corrotto o assente, le cartelle dei profili ancora
+  presenti vengono reimportate automaticamente.
+- **Release CI**: il workflow dei tag esegue anche i18n, TypeScript, `cargo fmt`,
+  Clippy e i test prima di compilare gli eseguibili.
+
 ## [1.0.4] - 2026-11-06
 
 ### Corretto
@@ -128,6 +153,7 @@ Prima release pubblica.
 - I binari non contengono più i percorsi assoluti della macchina di compilazione:
   `build.ps1` riscrive il profilo utente in `/build` (`--remap-path-prefix`).
 
+[1.0.5]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.5
 [1.0.4]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.4
 [1.0.3]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.3
 [1.0.2]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.2

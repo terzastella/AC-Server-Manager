@@ -65,6 +65,8 @@ pub fn load_preset(state: State<AppState>, name: String) -> Result<(), String> {
     }
     // senza backup il preset non deve sovrascrivere la configurazione corrente
     backup_cfg(&state)?;
+    // stesso lock delle prenotazioni: il preset non deve sovrascriverle a metà
+    let _guard = entry_lock().lock().unwrap();
     let destination = state.cfg_dir();
     for file in ["server_cfg.ini", "entry_list.ini", "welcome.txt"] {
         let from = directory.join(file);
@@ -72,6 +74,7 @@ pub fn load_preset(state: State<AppState>, name: String) -> Result<(), String> {
             fs::copy(&from, destination.join(file)).map_err(|error| error.to_string())?;
         }
     }
+    *state.entry_stamp.lock().unwrap() = Some(file_stamp(&destination.join("entry_list.ini")));
     Ok(())
 }
 

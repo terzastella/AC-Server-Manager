@@ -13,6 +13,9 @@ pub fn read_config(state: State<AppState>) -> Result<ini::Doc, String> {
 #[tauri::command]
 pub fn save_config(state: State<AppState>, sections: Vec<ini::Section>) -> Result<String, String> {
     let path = state.cfg_dir().join("server_cfg.ini");
+    // stesso lock di preset e slot: una configurazione non sovrascrive un
+    // caricamento di preset avvenuto nel frattempo
+    let _guard = entry_lock().lock().unwrap();
     let base = read_text(&path)?;
     // senza backup il salvataggio non deve avvenire
     let backup = backup_cfg(&state)?;
@@ -35,7 +38,11 @@ pub struct CarSlot {
 
 #[tauri::command]
 pub fn read_entry_list(state: State<AppState>) -> Result<Vec<CarSlot>, String> {
-    let text = read_text(&state.cfg_dir().join("entry_list.ini"))?;
+    let path = state.cfg_dir().join("entry_list.ini");
+    let text = read_text(&path)?;
+    // ricordiamo la versione letta: un salvataggio su una lista piu' vecchia
+    // non deve cancellare le prenotazioni arrivate nel frattempo
+    *state.entry_stamp.lock().unwrap() = Some(file_stamp(&path));
     let mut slots = Vec::new();
     for section in ini::parse(&text).sections {
         if !section.name.to_uppercase().starts_with("CAR_") {
@@ -138,11 +145,25 @@ pub(crate) fn apply_slots(base: &str, slots: &[CarSlot]) -> String {
 #[tauri::command]
 pub fn save_entry_list(state: State<AppState>, slots: Vec<CarSlot>) -> Result<String, String> {
     let path = state.cfg_dir().join("entry_list.ini");
+    // stesso lock delle prenotazioni HTTP: le due scritture non si sovrappongono
+    let _guard = entry_lock().lock().unwrap();
+
+    let current = file_stamp(&path);
+    if let Some(known) = *state.entry_stamp.lock().unwrap() {
+        if known != current {
+            return Err(messages::tr(
+                "la lista degli slot è cambiata (nuove prenotazioni): ricarica prima di salvare",
+                "the slot list changed (new bookings): reload before saving",
+            ));
+        }
+    }
+
     // file assente = profilo nuovo (si crea), errore di lettura = si annulla
     let base = read_text_or_empty(&path)?;
     let backup = backup_cfg(&state)?;
     let text = apply_slots(&base, &slots);
     write_text_atomic(&path, &text)?;
+    *state.entry_stamp.lock().unwrap() = Some(file_stamp(&path));
     Ok(backup)
 }
 

@@ -55,6 +55,38 @@ fn valid_slug(slug: &str) -> bool {
             .all(|character| character.is_ascii_alphanumeric() || character == '-')
 }
 
+/// Profili presenti sul disco ma non nell'indice (indice perso o corrotto):
+/// si ricostruiscono dalla cartella, così non spariscono dalla UI.
+fn scan_existing(root: &Path) -> Vec<ProfileEntry> {
+    let directory = root.join("profiles");
+    let Ok(read) = std::fs::read_dir(&directory) else {
+        return Vec::new();
+    };
+    let mut found: Vec<ProfileEntry> = read
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.path().is_dir())
+        .filter_map(|entry| {
+            let slug = entry.file_name().to_string_lossy().to_string();
+            if !valid_slug(&slug) {
+                return None;
+            }
+            let path = entry.path();
+            if !path.join("cfg").is_dir() && !path.join("content").exists() {
+                return None;
+            }
+            Some(ProfileEntry {
+                id: slug.clone(),
+                name: slug.clone(),
+                slug,
+                legacy: false,
+                created: String::new(),
+            })
+        })
+        .collect();
+    found.sort_by_key(|entry| entry.name.to_lowercase());
+    found
+}
+
 pub fn load(root: &Path) -> ProfileIndex {
     let path = index_path(root);
     match std::fs::read_to_string(&path) {
@@ -96,10 +128,12 @@ pub fn load(root: &Path) -> ProfileIndex {
             }
         }
     }
+    let mut profiles = vec![default_profile()];
+    profiles.extend(scan_existing(root));
     let index = ProfileIndex {
         version: 1,
         active: "default".into(),
-        profiles: vec![default_profile()],
+        profiles,
     };
     if root.is_dir() {
         let _ = save(root, &index);
@@ -650,6 +684,19 @@ mod corrupt_index_tests {
 
         let index = load(&root);
         assert!(index.profiles.iter().any(|entry| entry.legacy));
+        // il profilo orfano viene ricostruito dall'indice nuovo
+        assert!(
+            index
+                .profiles
+                .iter()
+                .any(|entry| entry.slug == "serata" && !entry.legacy),
+            "{:?}",
+            index
+                .profiles
+                .iter()
+                .map(|entry| entry.slug.clone())
+                .collect::<Vec<_>>()
+        );
 
         // il file rotto e' conservato con un nome di recupero
         let names: Vec<String> = std::fs::read_dir(root.join("profiles"))

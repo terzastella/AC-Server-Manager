@@ -10,6 +10,7 @@ use std::{
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
+    sync::{Mutex, OnceLock},
     time::Instant,
 };
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -21,6 +22,33 @@ use std::os::windows::process::CommandExt;
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 // ---------------------------------------------------------------- helpers
+
+/// Lock condiviso da chiunque modifichi `entry_list.ini`: prenotazioni HTTP,
+/// salvataggio manuale degli slot, caricamento dei preset.
+static ENTRY_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+/// Contatore per nomi di file temporanei univoci per singola scrittura.
+static WRITE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+pub(crate) fn entry_lock() -> &'static Mutex<()> {
+    ENTRY_LOCK.get_or_init(|| Mutex::new(()))
+}
+
+/// Impronta del file (mtime in nanosecondi + dimensione): due scritture diverse
+/// danno quasi certamente impronte diverse.
+pub(crate) fn file_stamp(path: &Path) -> u64 {
+    match fs::metadata(path) {
+        Ok(meta) => {
+            let modified = meta
+                .modified()
+                .ok()
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|duration| duration.as_nanos() as u64)
+                .unwrap_or(0);
+            modified ^ meta.len().rotate_left(17)
+        }
+        Err(_) => 0,
+    }
+}
 
 pub(crate) fn read_text(path: &Path) -> Result<String, String> {
     fs::read_to_string(path).map_err(|error| format!("{}: {}", path.display(), error))
@@ -54,8 +82,9 @@ pub(crate) fn write_text_atomic(path: &Path, text: &str) -> Result<(), String> {
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("cfg");
-    // nome univoco per processo: due scritture sullo stesso file non si pestano
-    let temp = path.with_file_name(format!("{}.{}.tmp", file_name, std::process::id()));
+    // nome univoco per singola scrittura: due salvataggi non si pestano
+    let seq = WRITE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let temp = path.with_file_name(format!("{}.{}.{}.tmp", file_name, std::process::id(), seq));
     fs::write(&temp, text).map_err(|error| format!("{}: {}", temp.display(), error))?;
     let written =
         fs::read_to_string(&temp).map_err(|error| format!("{}: {}", temp.display(), error))?;

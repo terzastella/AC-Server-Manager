@@ -12,7 +12,6 @@ use crate::messages;
 use crate::slots::{apply_reservation, free_slot_count, Reservation};
 use crate::state::AppState;
 
-static WRITE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 static RATE: OnceLock<Mutex<HashMap<String, Vec<Instant>>>> = OnceLock::new();
 
 /// Connessioni contemporanee massime: oltre, il client viene chiuso subito.
@@ -25,10 +24,6 @@ const MAX_HEADER_BYTES: usize = 8 * 1024;
 const MAX_BODY_BYTES: usize = 8 * 1024;
 /// Timeout di lettura/scrittura per singola connessione.
 const IO_TIMEOUT: Duration = Duration::from_secs(5);
-
-fn write_lock() -> &'static Mutex<()> {
-    WRITE_LOCK.get_or_init(|| Mutex::new(()))
-}
 
 /// Finestra del limite per IP.
 const RATE_WINDOW: Duration = Duration::from_secs(60);
@@ -384,7 +379,8 @@ fn reserve(state: &AppState, body: &serde_json::Value) -> Result<usize, ReserveF
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(0);
 
-    let _guard = write_lock().lock().unwrap();
+    // stesso lock del salvataggio manuale degli slot
+    let _guard = commands::entry_lock().lock().unwrap();
     let path = state.cfg_dir().join("entry_list.ini");
     let base = std::fs::read_to_string(&path).map_err(|error| {
         ReserveFailure::Internal(format!("entry_list.ini non leggibile: {}", error))
@@ -396,6 +392,7 @@ fn reserve(state: &AppState, body: &serde_json::Value) -> Result<usize, ReserveF
         })?;
     commands::backup_cfg(state).map_err(ReserveFailure::Internal)?;
     commands::write_text_atomic(&path, &text).map_err(ReserveFailure::Internal)?;
+    *state.entry_stamp.lock().unwrap() = Some(commands::file_stamp(&path));
     Ok(slot)
 }
 
@@ -424,10 +421,27 @@ fn respond(stream: &mut TcpStream, status: u16, body: serde_json::Value) {
     let _ = stream.write_all(response_text(status, &body).as_bytes());
 }
 
-/// Decrementa il contatore delle connessioni anche in caso di uscita anticipata.
-struct ConnectionGuard;
+/// Posto tra le connessioni attive, occupato **prima** di creare il thread:
+/// così il tetto limita anche il numero di thread, non solo il lavoro.
+struct ConnectionSlot;
 
-impl Drop for ConnectionGuard {
+impl ConnectionSlot {
+    fn acquire() -> Option<Self> {
+        let mut current = ACTIVE.load(Ordering::SeqCst);
+        loop {
+            if current >= MAX_CONNECTIONS {
+                return None;
+            }
+            match ACTIVE.compare_exchange(current, current + 1, Ordering::SeqCst, Ordering::SeqCst)
+            {
+                Ok(_) => return Some(Self),
+                Err(actual) => current = actual,
+            }
+        }
+    }
+}
+
+impl Drop for ConnectionSlot {
     fn drop(&mut self) {
         ACTIVE.fetch_sub(1, Ordering::SeqCst);
     }
@@ -443,12 +457,6 @@ trait ApiBackend {
 }
 
 fn serve_connection(mut stream: TcpStream, backend: &dyn ApiBackend) {
-    // il tetto vale anche qui: ogni connessione incrementa e il guard decrementa
-    if ACTIVE.fetch_add(1, Ordering::SeqCst) >= MAX_CONNECTIONS {
-        ACTIVE.fetch_sub(1, Ordering::SeqCst);
-        return;
-    }
-    let _guard = ConnectionGuard;
     let _ = stream.set_read_timeout(Some(IO_TIMEOUT));
     let _ = stream.set_write_timeout(Some(IO_TIMEOUT));
 
@@ -596,8 +604,16 @@ pub fn start(app: AppHandle, requested: u16, bind: &str) -> Result<u16, String> 
     std::thread::spawn(move || {
         for stream in listener.incoming() {
             let Ok(stream) = stream else { continue };
+            // il tetto si applica prima di creare il thread
+            let Some(slot) = ConnectionSlot::acquire() else {
+                drop(stream);
+                continue;
+            };
             let app = app.clone();
-            std::thread::spawn(move || handle(&app, stream));
+            std::thread::spawn(move || {
+                let _slot = slot;
+                handle(&app, stream);
+            });
         }
     });
     Ok(port)

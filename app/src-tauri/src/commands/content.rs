@@ -98,10 +98,12 @@ fn build_report(state: &AppState) -> ContentReport {
 
     let missing_cars = used_cars
         .iter()
+        .filter(|id| safe_id(id))
         .filter(|id| !dir.join("content").join("cars").join(id.as_str()).is_dir())
         .cloned()
         .collect();
     let missing_tracks = if !used_track.is_empty()
+        && safe_id(&used_track)
         && !dir
             .join("content")
             .join("tracks")
@@ -162,6 +164,21 @@ pub struct CopyReport {
     pub errors: Vec<String>,
 }
 
+/// Identificativo di contenuto usato nei percorsi: niente separatori, unità,
+/// `..` o caratteri di controllo. Un `CARS=` scritto a mano non deve poter
+/// far leggere o copiare fuori da `content/`.
+fn safe_id(id: &str) -> bool {
+    let id = id.trim();
+    !id.is_empty()
+        && id.len() <= 128
+        && id != "."
+        && id != ".."
+        && !id.contains('/')
+        && !id.contains('\\')
+        && !id.contains(':')
+        && !id.chars().any(char::is_control)
+}
+
 #[tauri::command]
 pub fn copy_content(state: State<AppState>, game_dir: String) -> Result<CopyReport, String> {
     let game = PathBuf::from(&game_dir);
@@ -208,6 +225,13 @@ pub fn copy_content(state: State<AppState>, game_dir: String) -> Result<CopyRepo
     };
 
     for id in used_cars(&sections) {
+        if !safe_id(&id) {
+            report.errors.push(messages::tr(
+                &format!("identificativo auto non valido: {}", id),
+                &format!("invalid car identifier: {}", id),
+            ));
+            continue;
+        }
         copy_one(
             cars_root.join(&id),
             dir.join("content").join("cars").join(&id),
@@ -216,14 +240,28 @@ pub fn copy_content(state: State<AppState>, game_dir: String) -> Result<CopyRepo
     }
     if let Some(track) = section_value(&sections, "SERVER", "TRACK") {
         if !track.is_empty() {
-            copy_one(
-                tracks_root.join(&track),
-                dir.join("content").join("tracks").join(&track),
-                &mut report,
-            );
+            if safe_id(&track) {
+                copy_one(
+                    tracks_root.join(&track),
+                    dir.join("content").join("tracks").join(&track),
+                    &mut report,
+                );
+            } else {
+                report.errors.push(messages::tr(
+                    &format!("identificativo pista non valido: {}", track),
+                    &format!("invalid track identifier: {}", track),
+                ));
+            }
         }
     }
     for id in used_weather(&sections) {
+        if !safe_id(&id) {
+            report.errors.push(messages::tr(
+                &format!("identificativo meteo non valido: {}", id),
+                &format!("invalid weather identifier: {}", id),
+            ));
+            continue;
+        }
         copy_one(
             weather_root.join(&id),
             dir.join("content").join("weather").join(&id),
@@ -759,3 +797,21 @@ mod content_library_tests {
 }
 
 // ---------------------------------------------------------------- network
+
+#[cfg(test)]
+mod safe_id_tests {
+    use super::safe_id;
+
+    #[test]
+    fn rejects_path_escape() {
+        assert!(safe_id("bmw_z4_gt3"));
+        assert!(safe_id("ks_barcelona"));
+        assert!(safe_id("v1.2"));
+        assert!(!safe_id(".."));
+        assert!(!safe_id("../cfg"));
+        assert!(!safe_id(r"..\cfg"));
+        assert!(!safe_id(r"C:\Windows"));
+        assert!(!safe_id("cars/../cfg"));
+        assert!(!safe_id(""));
+    }
+}

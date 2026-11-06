@@ -42,7 +42,7 @@ plain files (`cfg/*.ini`, `content/`, `logs/`) — no database, no external serv
 
 - Start, stop and restart the server with live logs and real-time status
 - `server_cfg.ini` and `entry_list.ini` editor that preserves order and comments, with an explanation for every field
-- Slots with car, skin and driver; soft booking by driver name
+- Slots with car, skin and driver; soft booking tied to the player SteamID64
 - Content browser (cars, tracks, weather) with previews and copy from the game to the server
 - **Read-only** access to Content Manager settings, import of server presets
 - Network: detected IPs, `acmanager://` links, QR code, port checks, firewall rules
@@ -185,8 +185,10 @@ content are intentionally not translated.
 - **Bookings apply from the next server start**: Assetto Corsa reads `entry_list.ini`
   only at startup, so a booking made while the server is running takes effect after a
   restart (the panel tells you).
-- **Slot locking is by driver name**, not a hard GUID lock: two people typing the same
-  name would fight over the same slot.
+- **Bookings are identified by SteamID64**, so two people with the same name get
+  different slots. A slot created by hand with only a driver name and no GUID is
+  adopted by the first player who shows up with that name: that is the compatibility
+  rule for bookings made before 1.0.2.
 - **Content Manager is optional and read-only**: importing settings works, but nothing
   is ever written back to `Values.data`.
 - **Content must already exist** on the server: the app copies and checks cars, tracks

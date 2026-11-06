@@ -42,7 +42,7 @@ in file leggibili (`cfg/*.ini`, `content/`, `logs/`), senza database né servizi
 
 - Avvio, stop e riavvio del server con log live e stato in tempo reale
 - Editor di `server_cfg.ini` e `entry_list.ini` che preserva ordine e commenti, con una spiegazione per ogni campo
-- Slot con auto, livrea e pilota; prenotazione "soft" per nome guidatore
+- Slot con auto, livrea e pilota; prenotazione legata allo SteamID64 del giocatore
 - Browser contenuti (auto, piste, meteo) con anteprime e copia dal gioco al server
 - Lettura **in sola lettura** dei settings di Content Manager, import dei preset server
 - Rete: IP rilevati, link `acmanager://`, QR code, controllo porte, regole firewall
@@ -186,8 +186,10 @@ chiavi dei file `.ini` e il contenuto dei log del server.
 - **Le prenotazioni valgono dal prossimo avvio**: Assetto Corsa legge `entry_list.ini`
   solo all'avvio, quindi una prenotazione fatta a server acceso ha effetto dopo un
   riavvio (il pannello te lo dice).
-- **Il blocco dello slot è per nome pilota**, non un lock rigido sul GUID: due persone
-  con lo stesso nome si contenderebbero lo stesso slot.
+- **Le prenotazioni sono identificate dallo SteamID64**, quindi due persone con lo
+  stesso nome ottengono slot diversi. Uno slot creato a mano con il solo nome e
+  senza GUID viene adottato dal primo giocatore che si presenta con quel nome:
+  è la regola di compatibilità per le prenotazioni fatte prima della 1.0.2.
 - **Content Manager è opzionale e in sola lettura**: l'import dei settings funziona, ma
   nulla viene mai scritto su `Values.data`.
 - **I contenuti devono già esistere** sul server: l'app copia e verifica auto, piste e

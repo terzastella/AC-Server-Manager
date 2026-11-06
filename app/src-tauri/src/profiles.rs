@@ -6,12 +6,6 @@ use crate::messages;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
-
-#[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProfileEntry {
     pub id: String,
@@ -63,25 +57,43 @@ fn valid_slug(slug: &str) -> bool {
 
 pub fn load(root: &Path) -> ProfileIndex {
     let path = index_path(root);
-    if let Ok(text) = std::fs::read_to_string(&path) {
-        if let Ok(mut index) = serde_json::from_str::<ProfileIndex>(&text) {
-            // Un indice modificato a mano o scritto da una versione diversa non
-            // deve poter puntare fuori da `profiles/` né duplicare gli id.
-            let mut seen = std::collections::HashSet::new();
-            index.profiles.retain(|entry| {
-                let usable = entry.legacy || valid_slug(&entry.slug);
-                usable && seen.insert(entry.id.clone())
-            });
-            if !index.profiles.iter().any(|entry| entry.legacy) {
-                index.profiles.insert(0, default_profile());
+    match std::fs::read_to_string(&path) {
+        Ok(text) => match serde_json::from_str::<ProfileIndex>(&text) {
+            Ok(mut index) => {
+                // Un indice modificato a mano o scritto da una versione diversa non
+                // deve poter puntare fuori da `profiles/` né duplicare gli id.
+                let mut seen = std::collections::HashSet::new();
+                index.profiles.retain(|entry| {
+                    let usable = entry.legacy || valid_slug(&entry.slug);
+                    usable && seen.insert(entry.id.clone())
+                });
+                if !index.profiles.iter().any(|entry| entry.legacy) {
+                    index.profiles.insert(0, default_profile());
+                }
+                index.active = index
+                    .profiles
+                    .iter()
+                    .find(|entry| entry.id == index.active)
+                    .map(|entry| entry.id.clone())
+                    .unwrap_or_else(|| index.profiles[0].id.clone());
+                return index;
             }
-            index.active = index
-                .profiles
-                .iter()
-                .find(|entry| entry.id == index.active)
-                .map(|entry| entry.id.clone())
-                .unwrap_or_else(|| index.profiles[0].id.clone());
-            return index;
+            Err(error) => {
+                // Non sovrascrivere un indice esistente: se è corrotto lo si
+                // conserva, così le cartelle dei profili restano recuperabili.
+                let backup = path.with_extension(format!("json.corrupt-{}", stamp()));
+                let _ = std::fs::rename(&path, &backup);
+                eprintln!(
+                    "indice profili non valido ({}): copia in {}",
+                    error,
+                    backup.display()
+                );
+            }
+        },
+        Err(error) => {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                eprintln!("indice profili non leggibile: {}", error);
+            }
         }
     }
     let index = ProfileIndex {
@@ -99,7 +111,7 @@ pub fn save(root: &Path, index: &ProfileIndex) -> Result<(), String> {
     let dir = root.join("profiles");
     std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
     let path = index_path(root);
-    let temp = path.with_extension("json.tmp");
+    let temp = path.with_file_name(format!("index.{}.tmp", std::process::id()));
     let text = serde_json::to_string_pretty(index).map_err(|error| error.to_string())?;
     std::fs::write(&temp, text).map_err(|error| error.to_string())?;
     std::fs::rename(&temp, &path).map_err(|error| error.to_string())
@@ -366,28 +378,13 @@ pub fn ensure_content_link(root: &Path, entry: &ProfileEntry) -> Result<(), Stri
         if !target.exists() {
             std::fs::create_dir_all(&target).map_err(|error| error.to_string())?;
         }
-        let mut command = std::process::Command::new("cmd");
-        command.args([
-            "/C",
-            "mklink",
-            "/J",
-            &link.to_string_lossy(),
-            &target.to_string_lossy(),
-        ]);
-        command.creation_flags(CREATE_NO_WINDOW);
-        let output = command.output().map_err(|error| error.to_string())?;
-        if !output.status.success() {
-            return Err(messages::tr(
-                &format!(
-                    "impossibile collegare i contenuti: {}",
-                    String::from_utf8_lossy(&output.stderr).trim()
-                ),
-                &format!(
-                    "could not link the content: {}",
-                    String::from_utf8_lossy(&output.stderr).trim()
-                ),
-            ));
-        }
+        // niente cmd.exe: i percorsi non passano da un interprete di comandi
+        junction::create(&target, &link).map_err(|error| {
+            messages::tr(
+                &format!("impossibile collegare i contenuti: {}", error),
+                &format!("could not link the content: {}", error),
+            )
+        })?;
     }
     #[cfg(not(windows))]
     {
@@ -602,6 +599,74 @@ mod tests {
         let entry = create(&root, &mut index, &long, &base).unwrap();
         let copy = duplicate(&root, &mut index, &entry.id).unwrap();
         assert!(copy.name.chars().count() <= 40);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+#[cfg(all(test, windows))]
+mod link_tests {
+    use super::*;
+
+    #[test]
+    fn creates_and_reuses_content_junction() {
+        let root = std::env::temp_dir().join(format!("acsc-junction-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("content").join("cars")).expect("content");
+        std::fs::create_dir_all(root.join("profiles").join("test").join("cfg")).expect("profilo");
+
+        let entry = ProfileEntry {
+            id: "test".into(),
+            name: "Test".into(),
+            slug: "test".into(),
+            legacy: false,
+            created: String::new(),
+        };
+
+        ensure_content_link(&root, &entry).expect("junction creata");
+        let link = root.join("profiles").join("test").join("content");
+        assert!(link.is_dir());
+        assert!(link.join("cars").is_dir());
+
+        // seconda chiamata: la riconosce e non la ricrea
+        ensure_content_link(&root, &entry).expect("junction gia presente");
+
+        let _ = std::fs::remove_dir(&link);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+#[cfg(test)]
+mod corrupt_index_tests {
+    use super::*;
+
+    #[test]
+    fn corrupt_index_is_preserved_not_overwritten() {
+        let root = std::env::temp_dir().join(format!("acsc-corrupt-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("profiles")).expect("profiles");
+        // un profilo reale sul disco, che l'indice rotto non deve far sparire
+        std::fs::create_dir_all(root.join("profiles").join("serata").join("cfg")).expect("profilo");
+        std::fs::write(root.join("profiles").join("index.json"), "{ indice rotto").expect("indice");
+
+        let index = load(&root);
+        assert!(index.profiles.iter().any(|entry| entry.legacy));
+
+        // il file rotto e' conservato con un nome di recupero
+        let names: Vec<String> = std::fs::read_dir(root.join("profiles"))
+            .expect("dir")
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().to_string())
+            .collect();
+        assert!(
+            names
+                .iter()
+                .any(|name| name.starts_with("index.json.corrupt-")),
+            "{:?}",
+            names
+        );
+        // la cartella del profilo e' ancora li
+        assert!(root.join("profiles").join("serata").join("cfg").is_dir());
+
         let _ = std::fs::remove_dir_all(&root);
     }
 }

@@ -171,6 +171,11 @@ pub fn run() {
                 match api::start(app.handle().clone(), port, &bind) {
                     Ok(bound) => {
                         if bound != port {
+                            // il link d'invito deve puntare alla porta davvero aperta
+                            state.settings.lock().unwrap().invite.api_port = bound;
+                            if let Err(error) = state.persist() {
+                                eprintln!("porta API non salvata: {}", error);
+                            }
                             eprintln!("porta API {} occupata: uso {}", port, bound);
                         }
                     }

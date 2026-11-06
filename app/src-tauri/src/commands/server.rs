@@ -182,12 +182,24 @@ pub fn stop_external_server(pid: u32) -> Result<u32, String> {
             "the process is no longer running",
         ));
     }
-    if let Some(path) = server_paths().remove(&pid) {
-        if !path.is_empty() && !is_acserver_exe(&path) {
+    // se non si riesce a leggere il percorso non si può verificare l'eseguibile:
+    // meglio rifiutare che uccidere un PID riusato da un altro processo
+    match server_paths().remove(&pid) {
+        Some(path) if is_acserver_exe(&path) => {}
+        Some(_) => {
             return Err(messages::tr(
                 &format!("rifiutato: il PID {} non è acServer.exe", pid),
                 &format!("refused: PID {} is not acServer.exe", pid),
-            ));
+            ))
+        }
+        None => {
+            return Err(messages::tr(
+                &format!(
+                    "rifiutato: impossibile verificare l'eseguibile del PID {}",
+                    pid
+                ),
+                &format!("refused: cannot verify the executable of PID {}", pid),
+            ))
         }
     }
     let mut command = Command::new("taskkill");
@@ -421,6 +433,12 @@ pub(crate) fn backup_cfg(state: &AppState) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stop_refuses_unknown_pid() {
+        let error = stop_external_server(999_999).expect_err("PID inesistente rifiutato");
+        assert!(!error.is_empty());
+    }
 
     #[test]
     fn only_real_acserver_exe_is_accepted() {

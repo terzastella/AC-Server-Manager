@@ -32,6 +32,8 @@ fn write_lock() -> &'static Mutex<()> {
 
 /// Finestra del limite per IP.
 const RATE_WINDOW: Duration = Duration::from_secs(60);
+/// Tetto degli IP ricordati: oltre, si scarta quello fermo da più tempo.
+const RATE_MAX_PEERS: usize = 512;
 
 /// Logica pura del limite (testabile con un istante esplicito).
 fn rate_allowed(
@@ -41,8 +43,21 @@ fn rate_allowed(
     now: Instant,
 ) -> bool {
     let mut guard = store.lock().unwrap();
+    // gli IP che non hanno più richieste nella finestra non occupano memoria
+    guard.retain(|_, hits| {
+        hits.retain(|at| now.duration_since(*at) < RATE_WINDOW);
+        !hits.is_empty()
+    });
+    if guard.len() >= RATE_MAX_PEERS && !guard.contains_key(peer) {
+        if let Some(oldest) = guard
+            .iter()
+            .min_by_key(|(_, hits)| hits.last().copied())
+            .map(|(key, _)| key.clone())
+        {
+            guard.remove(&oldest);
+        }
+    }
     let hits = guard.entry(peer.to_string()).or_default();
-    hits.retain(|at| now.duration_since(*at) < RATE_WINDOW);
     if hits.len() >= max {
         return false;
     }
@@ -57,20 +72,12 @@ fn rate_ok(peer: &str, max: usize) -> bool {
     rate_allowed(store, peer, max, Instant::now())
 }
 
-/// Confronto a tempo costante: il tempo impiegato non dipende da quanti
-/// caratteri combaciano. La lunghezza del token è pubblica (43 caratteri
-/// base64url), quindi uscire subito su lunghezza diversa non rivela altro.
+/// Confronto a tempo costante con `subtle`: il tempo impiegato non dipende da
+/// quanti caratteri combaciano, nemmeno in teoria. La lunghezza è pubblica
+/// (43 caratteri base64url), quindi una lunghezza diversa vale "no" subito.
 fn token_matches(expected: &str, provided: &str) -> bool {
-    let expected = expected.as_bytes();
-    let provided = provided.as_bytes();
-    if expected.is_empty() || expected.len() != provided.len() {
-        return false;
-    }
-    let mut diff = 0u8;
-    for (left, right) in expected.iter().zip(provided.iter()) {
-        diff |= left ^ right;
-    }
-    diff == 0
+    use subtle::ConstantTimeEq;
+    !expected.is_empty() && expected.as_bytes().ct_eq(provided.as_bytes()).into()
 }
 
 /// Verifica token + scadenza. `now` esplicito per i test.
@@ -146,7 +153,12 @@ fn read_request<R: BufRead>(reader: &mut R) -> Result<Request, RequestError> {
     let mut parts = request_line.split_whitespace();
     let method = parts.next().unwrap_or("").to_string();
     let target = parts.next().unwrap_or("").to_string();
-    if method.is_empty() || target.is_empty() {
+    let version = parts.next().unwrap_or("");
+    if method.is_empty() || target.is_empty() || parts.next().is_some() {
+        return Err(RequestError::Malformed);
+    }
+    // solo HTTP/1.x: niente framing sconosciuto
+    if !version.starts_with("HTTP/1.") {
         return Err(RequestError::Malformed);
     }
 
@@ -161,8 +173,15 @@ fn read_request<R: BufRead>(reader: &mut R) -> Result<Request, RequestError> {
         if line.trim().is_empty() {
             break;
         }
-        if let Some((key, value)) = line.split_once(':') {
-            headers.insert(key.trim().to_ascii_lowercase(), value.trim().to_string());
+        // header senza `:` = richiesta malformata, non da ignorare
+        let (key, value) = line.split_once(':').ok_or(RequestError::Malformed)?;
+        let key = key.trim().to_ascii_lowercase();
+        if key.is_empty() {
+            return Err(RequestError::Malformed);
+        }
+        // un header duplicato è ambiguo: meglio rifiutare che scegliere a caso
+        if headers.insert(key, value.trim().to_string()).is_some() {
+            return Err(RequestError::Malformed);
         }
     }
     // se gli header superano il tetto, `take` ha già troncato: il corpo non è attendibile
@@ -170,10 +189,16 @@ fn read_request<R: BufRead>(reader: &mut R) -> Result<Request, RequestError> {
         return Err(RequestError::TooLarge);
     }
 
-    let length = headers
-        .get("content-length")
-        .and_then(|value| value.parse::<usize>().ok())
-        .unwrap_or(0);
+    // il corpo chunked non è supportato: nessuna ambiguità sul framing
+    if headers.contains_key("transfer-encoding") {
+        return Err(RequestError::Malformed);
+    }
+    let length = match headers.get("content-length") {
+        Some(value) => value
+            .parse::<usize>()
+            .map_err(|_| RequestError::Malformed)?,
+        None => 0,
+    };
     if length > MAX_BODY_BYTES {
         return Err(RequestError::TooLarge);
     }
@@ -314,22 +339,46 @@ fn skin_exists(state: &AppState, car: &str, skin: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn reserve(state: &AppState, body: &serde_json::Value) -> Result<usize, String> {
-    let reservation = parse_reserve(body)?;
+/// Motivo per cui una prenotazione non è andata a buon fine, con il codice
+/// HTTP corrispondente.
+enum ReserveFailure {
+    Invalid(String),
+    NoSlot(String),
+    Internal(String),
+}
+
+impl ReserveFailure {
+    fn status(&self) -> u16 {
+        match self {
+            Self::Invalid(_) => 400,
+            Self::NoSlot(_) => 409,
+            Self::Internal(_) => 500,
+        }
+    }
+
+    fn message(self) -> String {
+        match self {
+            Self::Invalid(message) | Self::NoSlot(message) | Self::Internal(message) => message,
+        }
+    }
+}
+
+fn reserve(state: &AppState, body: &serde_json::Value) -> Result<usize, ReserveFailure> {
+    let reservation = parse_reserve(body).map_err(ReserveFailure::Invalid)?;
     let car = reservation.car.clone();
     let sections = commands::config_sections(state);
     let available = commands::used_cars(&sections);
     if !available.iter().any(|id| id.eq_ignore_ascii_case(&car)) {
-        return Err(messages::tr(
+        return Err(ReserveFailure::Invalid(messages::tr(
             &format!("auto non presente in CARS=: {}", car),
             &format!("car not in CARS=: {}", car),
-        ));
+        )));
     }
     if !skin_exists(state, &car, &reservation.skin) {
-        return Err(messages::tr(
+        return Err(ReserveFailure::Invalid(messages::tr(
             &format!("livrea non trovata per l'auto {}", car),
             &format!("skin not found for car {}", car),
-        ));
+        )));
     }
     let cap = commands::section_value(&sections, "SERVER", "MAX_CLIENTS")
         .and_then(|value| value.parse::<usize>().ok())
@@ -337,11 +386,16 @@ fn reserve(state: &AppState, body: &serde_json::Value) -> Result<usize, String> 
 
     let _guard = write_lock().lock().unwrap();
     let path = state.cfg_dir().join("entry_list.ini");
-    let base = std::fs::read_to_string(&path)
-        .map_err(|error| format!("entry_list.ini non leggibile: {}", error))?;
-    let (text, slot) = apply_reservation(&base, cap, &reservation)?;
-    commands::backup_cfg(state)?;
-    commands::write_text_atomic(&path, &text)?;
+    let base = std::fs::read_to_string(&path).map_err(|error| {
+        ReserveFailure::Internal(format!("entry_list.ini non leggibile: {}", error))
+    })?;
+    let (text, slot) =
+        apply_reservation(&base, cap, &reservation).map_err(|error| match error {
+            crate::slots::ReserveError::Invalid(message) => ReserveFailure::Invalid(message),
+            crate::slots::ReserveError::NoSlot(message) => ReserveFailure::NoSlot(message),
+        })?;
+    commands::backup_cfg(state).map_err(ReserveFailure::Internal)?;
+    commands::write_text_atomic(&path, &text).map_err(ReserveFailure::Internal)?;
     Ok(slot)
 }
 
@@ -349,8 +403,11 @@ fn reserve(state: &AppState, body: &serde_json::Value) -> Result<usize, String> 
 fn response_text(status: u16, body: &serde_json::Value) -> String {
     let reason = match status {
         200 => "OK",
+        400 => "Bad Request",
         403 => "Forbidden",
+        409 => "Conflict",
         429 => "Too Many Requests",
+        500 => "Internal Server Error",
         _ => "Bad Request",
     };
     let text = body.to_string();
@@ -381,11 +438,16 @@ impl Drop for ConnectionGuard {
 trait ApiBackend {
     fn authorized(&self, token: &str) -> bool;
     fn payload(&self) -> serde_json::Value;
-    fn reserve(&self, body: &serde_json::Value) -> Result<usize, String>;
+    fn reserve(&self, body: &serde_json::Value) -> Result<usize, (u16, String)>;
     fn slot_reserved(&self, slot: usize);
 }
 
 fn serve_connection(mut stream: TcpStream, backend: &dyn ApiBackend) {
+    // il tetto vale anche qui: ogni connessione incrementa e il guard decrementa
+    if ACTIVE.fetch_add(1, Ordering::SeqCst) >= MAX_CONNECTIONS {
+        ACTIVE.fetch_sub(1, Ordering::SeqCst);
+        return;
+    }
     let _guard = ConnectionGuard;
     let _ = stream.set_read_timeout(Some(IO_TIMEOUT));
     let _ = stream.set_write_timeout(Some(IO_TIMEOUT));
@@ -437,8 +499,16 @@ fn serve_connection(mut stream: TcpStream, backend: &dyn ApiBackend) {
                     json!({"ok": false, "error": messages::tr("troppe richieste", "too many requests")}),
                 );
             }
-            let parsed: serde_json::Value =
-                serde_json::from_slice(&request.body).unwrap_or(json!({}));
+            let parsed: serde_json::Value = match serde_json::from_slice(&request.body) {
+                Ok(value) => value,
+                Err(_) => {
+                    return respond(
+                        &mut stream,
+                        400,
+                        json!({"ok": false, "error": messages::tr("JSON non valido", "invalid JSON")}),
+                    )
+                }
+            };
             if !backend.authorized(&provided_token(&request, Some(&parsed))) {
                 return respond(
                     &mut stream,
@@ -451,7 +521,9 @@ fn serve_connection(mut stream: TcpStream, backend: &dyn ApiBackend) {
                     backend.slot_reserved(slot);
                     respond(&mut stream, 200, json!({"ok": true, "slot": slot}))
                 }
-                Err(error) => respond(&mut stream, 200, json!({"ok": false, "error": error})),
+                Err((status, error)) => {
+                    respond(&mut stream, status, json!({"ok": false, "error": error}))
+                }
             }
         }
         _ => respond(
@@ -475,9 +547,9 @@ impl ApiBackend for AppBackend<'_> {
         server_payload(&state)
     }
 
-    fn reserve(&self, body: &serde_json::Value) -> Result<usize, String> {
+    fn reserve(&self, body: &serde_json::Value) -> Result<usize, (u16, String)> {
         let state = self.0.state::<AppState>();
-        reserve(&state, body)
+        reserve(&state, body).map_err(|failure| (failure.status(), failure.message()))
     }
 
     fn slot_reserved(&self, slot: usize) {
@@ -500,27 +572,13 @@ fn parse_bind(bind: &str) -> Result<IpAddr, String> {
     })
 }
 
-/// Avvia l'API su `bind` (default tutte le interfacce), provando le porte
-/// successive se occupata.
-pub fn start(app: AppHandle, requested: u16, bind: &str) -> Result<u16, String> {
-    let ip = parse_bind(bind)?;
+/// Trova la prima porta libera da `requested` in poi e restituisce il listener
+/// con la porta scelta: è la parte testabile del fallback.
+fn bind_any(ip: IpAddr, requested: u16) -> Result<(TcpListener, u16), String> {
     let mut last_error = String::new();
     for port in requested..requested.saturating_add(20) {
         match TcpListener::bind((ip, port)) {
-            Ok(listener) => {
-                std::thread::spawn(move || {
-                    for stream in listener.incoming() {
-                        let Ok(stream) = stream else { continue };
-                        if ACTIVE.fetch_add(1, Ordering::SeqCst) >= MAX_CONNECTIONS {
-                            ACTIVE.fetch_sub(1, Ordering::SeqCst);
-                            continue;
-                        }
-                        let app = app.clone();
-                        std::thread::spawn(move || handle(&app, stream));
-                    }
-                });
-                return Ok(port);
-            }
+            Ok(listener) => return Ok((listener, port)),
             Err(error) => last_error = error.to_string(),
         }
     }
@@ -528,6 +586,21 @@ pub fn start(app: AppHandle, requested: u16, bind: &str) -> Result<u16, String> 
         &format!("nessuna porta API libera: {}", last_error),
         &format!("no free API port: {}", last_error),
     ))
+}
+
+/// Avvia l'API su `bind` (default tutte le interfacce), provando le porte
+/// successive se occupata.
+pub fn start(app: AppHandle, requested: u16, bind: &str) -> Result<u16, String> {
+    let ip = parse_bind(bind)?;
+    let (listener, port) = bind_any(ip, requested)?;
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(stream) = stream else { continue };
+            let app = app.clone();
+            std::thread::spawn(move || handle(&app, stream));
+        }
+    });
+    Ok(port)
 }
 
 #[cfg(test)]
@@ -565,6 +638,134 @@ mod tests {
         assert!(parse_bind("").is_err());
         assert!(parse_bind("192.168.1").is_err());
         assert!(parse_bind("localhost").is_err());
+    }
+
+    #[test]
+    fn rate_limit_forgets_idle_peers() {
+        let store = store();
+        let start = Instant::now();
+        assert!(rate_allowed(&store, "10.0.0.9", 2, start));
+        assert_eq!(store.lock().unwrap().len(), 1);
+
+        // passata la finestra, il vecchio IP non resta in memoria
+        assert!(rate_allowed(
+            &store,
+            "10.0.0.10",
+            2,
+            start + RATE_WINDOW + Duration::from_secs(1)
+        ));
+        assert_eq!(store.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn reserve_failures_map_to_status() {
+        assert_eq!(ReserveFailure::Invalid("x".into()).status(), 400);
+        assert_eq!(ReserveFailure::NoSlot("x".into()).status(), 409);
+        assert_eq!(ReserveFailure::Internal("x".into()).status(), 500);
+        assert_eq!(ReserveFailure::NoSlot("pieno".into()).message(), "pieno");
+    }
+
+    #[test]
+    fn rejects_malformed_and_duplicate_headers() {
+        // header senza due punti
+        assert_eq!(
+            read_request(&mut reader("GET /x HTTP/1.1\r\nNoColon\r\n\r\n")).unwrap_err(),
+            RequestError::Malformed
+        );
+        // header duplicato: ambiguo
+        assert_eq!(
+            read_request(&mut reader("GET /x HTTP/1.1\r\nA: 1\r\nA: 2\r\n\r\n")).unwrap_err(),
+            RequestError::Malformed
+        );
+        // lunghezza non numerica
+        assert_eq!(
+            read_request(&mut reader(
+                "GET /x HTTP/1.1\r\nContent-Length: abc\r\n\r\n"
+            ))
+            .unwrap_err(),
+            RequestError::Malformed
+        );
+        // chunked non supportato
+        assert_eq!(
+            read_request(&mut reader(
+                "GET /x HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n"
+            ))
+            .unwrap_err(),
+            RequestError::Malformed
+        );
+    }
+
+    #[test]
+    fn reserve_errors_use_http_status() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("porta libera");
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let backend = FakeBackend {
+                token: "abc".into(),
+            };
+            for _ in 0..3 {
+                let (stream, _) = listener.accept().expect("connessione");
+                serve_connection(stream, &backend);
+            }
+        });
+
+        // slot pieno: 409, non 200 con ok:false
+        let body = "{\"full\":true}";
+        let response = tcp_request(
+            port,
+            &format!(
+                "POST /api/reserve HTTP/1.1\r\nAuthorization: Bearer abc\r\nContent-Length: {}\r\n\r\n{}",
+                body.len(),
+                body
+            ),
+        );
+        assert!(
+            response.starts_with("HTTP/1.1 409 Conflict"),
+            "{}",
+            response
+        );
+
+        // JSON rotto: 400
+        let body = "{rotto";
+        let response = tcp_request(
+            port,
+            &format!(
+                "POST /api/reserve HTTP/1.1\r\nAuthorization: Bearer abc\r\nContent-Length: {}\r\n\r\n{}",
+                body.len(),
+                body
+            ),
+        );
+        assert!(
+            response.starts_with("HTTP/1.1 400 Bad Request"),
+            "{}",
+            response
+        );
+
+        // prenotazione valida: 200
+        let body = "{\"driver\":\"Player\"}";
+        let response = tcp_request(
+            port,
+            &format!(
+                "POST /api/reserve HTTP/1.1\r\nAuthorization: Bearer abc\r\nContent-Length: {}\r\n\r\n{}",
+                body.len(),
+                body
+            ),
+        );
+        assert!(response.starts_with("HTTP/1.1 200"), "{}", response);
+        assert!(response.contains("\"slot\":2"));
+
+        server.join().expect("server");
+    }
+
+    #[test]
+    fn busy_port_moves_to_the_next_one() {
+        let blocked = TcpListener::bind(("127.0.0.1", 0)).expect("porta di prova");
+        let busy = blocked.local_addr().unwrap().port();
+        let ip: IpAddr = "127.0.0.1".parse().unwrap();
+
+        let (_listener, chosen) = bind_any(ip, busy).expect("trova una porta libera");
+        assert_ne!(chosen, busy);
+        assert!(chosen > busy && chosen < busy + 20);
     }
 
     #[test]
@@ -717,6 +918,15 @@ mod tests {
             read_request(&mut reader("GET\r\n\r\n")).unwrap_err(),
             RequestError::Malformed
         );
+        // versione non HTTP/1.x o parti in più
+        assert_eq!(
+            read_request(&mut reader("GET /x HTTP/2\r\n\r\n")).unwrap_err(),
+            RequestError::Malformed
+        );
+        assert_eq!(
+            read_request(&mut reader("GET /x HTTP/1.1 extra\r\n\r\n")).unwrap_err(),
+            RequestError::Malformed
+        );
     }
 
     #[test]
@@ -752,7 +962,14 @@ mod tests {
             json!({"name": "Test", "free_slots": 1})
         }
 
-        fn reserve(&self, _body: &serde_json::Value) -> Result<usize, String> {
+        fn reserve(&self, body: &serde_json::Value) -> Result<usize, (u16, String)> {
+            if body
+                .get("full")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false)
+            {
+                return Err((409, "nessuno slot libero".into()));
+            }
             Ok(2)
         }
 
@@ -761,10 +978,23 @@ mod tests {
 
     fn tcp_request(port: u16, raw: &str) -> String {
         let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connessione");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .expect("timeout");
         stream.write_all(raw.as_bytes()).expect("scrittura");
-        let mut response = String::new();
-        stream.read_to_string(&mut response).expect("lettura");
-        response
+        // su Windows la chiusura del server può arrivare come RST: i byte già
+        // ricevuti restano validi, quindi si legge finché c'è qualcosa
+        let mut response = Vec::new();
+        let mut buffer = [0u8; 4096];
+        loop {
+            match stream.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(count) => response.extend_from_slice(&buffer[..count]),
+                Err(error) if error.kind() == std::io::ErrorKind::ConnectionReset => break,
+                Err(error) => panic!("lettura: {}", error),
+            }
+        }
+        String::from_utf8_lossy(&response).into_owned()
     }
 
     #[test]

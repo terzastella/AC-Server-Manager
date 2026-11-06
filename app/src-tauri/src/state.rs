@@ -2,11 +2,20 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     fs,
+    io::ErrorKind,
     path::{Path, PathBuf},
     process::Child,
-    sync::Mutex,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Mutex, OnceLock,
+    },
     time::Instant,
 };
+
+/// Serializza le scritture di `settings.json`: due salvataggi ravvicinati non
+/// devono condividere il file temporaneo.
+static PERSIST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+static PERSIST_SEQ: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
@@ -129,6 +138,7 @@ impl AppState {
     /// Scrive `settings.json` in modo atomico. L'errore viene restituito:
     /// l'interfaccia non deve credere salvato ciò che non è finito su disco.
     pub fn persist(&self) -> Result<(), String> {
+        let _guard = PERSIST_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
         let snapshot = self.settings.lock().unwrap().clone();
         let text = serde_json::to_string_pretty(&snapshot)
             .map_err(|error| format!("settings.json non serializzabile: {}", error))?;
@@ -136,7 +146,8 @@ impl AppState {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         }
-        let temp = path.with_file_name(format!("settings.{}.tmp", std::process::id()));
+        let seq = PERSIST_SEQ.fetch_add(1, Ordering::Relaxed);
+        let temp = path.with_file_name(format!("settings.{}.{}.tmp", std::process::id(), seq));
         fs::write(&temp, &text).map_err(|error| format!("{}: {}", temp.display(), error))?;
         let written =
             fs::read_to_string(&temp).map_err(|error| format!("{}: {}", temp.display(), error))?;
@@ -162,15 +173,45 @@ pub fn settings_path(exe: &Path) -> PathBuf {
 
 pub fn load_settings(exe: &Path) -> Settings {
     let path = settings_path(exe);
-    if let Ok(text) = fs::read_to_string(path) {
-        // alcuni editor salvano con BOM: senza toglierlo il parsing fallisce
-        // e l'app ripartirebbe dai valori di fabbrica perdendo le impostazioni.
-        let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
-        if let Ok(settings) = serde_json::from_str::<Settings>(text) {
-            return settings;
+    match fs::read_to_string(&path) {
+        Ok(text) => {
+            // alcuni editor salvano con BOM: senza toglierlo il parsing fallisce
+            let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
+            match serde_json::from_str::<Settings>(text) {
+                Ok(mut settings) => {
+                    // un token vuoto (CSPRNG fallito al primo avvio) renderebbe
+                    // inutilizzabile ogni invito: si riprova qui
+                    if settings.invite.token.trim().is_empty() {
+                        match crate::invite::new_token() {
+                            Ok(token) => settings.invite.token = token,
+                            Err(error) => eprintln!("token d'invito non generato: {}", error),
+                        }
+                    }
+                    settings
+                }
+                Err(error) => {
+                    // il file resta recuperabile: non si sovrascrive al primo salvataggio
+                    let backup = path.with_extension(format!(
+                        "json.invalid-{}",
+                        chrono::Local::now().format("%Y%m%d-%H%M%S")
+                    ));
+                    let _ = fs::rename(&path, &backup);
+                    eprintln!(
+                        "settings.json non valido ({}): copia in {}",
+                        error,
+                        backup.display()
+                    );
+                    Settings::default()
+                }
+            }
+        }
+        Err(error) => {
+            if error.kind() != ErrorKind::NotFound {
+                eprintln!("settings.json non leggibile: {}", error);
+            }
+            Settings::default()
         }
     }
-    Settings::default()
 }
 
 /// Profili del server: indice in `<root>\profiles\index.json`, con il profilo
@@ -208,6 +249,32 @@ mod tests {
         let settings: InviteSettings = serde_json::from_str(json).expect("json valido");
         assert_eq!(settings.api_bind, "0.0.0.0");
         assert!(settings.expires_at.is_none());
+    }
+
+    #[test]
+    fn invalid_settings_file_is_preserved() {
+        let dir = std::env::temp_dir().join(format!("acsc-bad-settings-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("cartella");
+        fs::write(dir.join("settings.json"), "{ non json").expect("scrittura");
+
+        let settings = load_settings(&dir.join("ACServerControl.exe"));
+        assert_eq!(settings.language, "it");
+
+        let names: Vec<String> = fs::read_dir(&dir)
+            .expect("dir")
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().to_string())
+            .collect();
+        assert!(
+            names
+                .iter()
+                .any(|name| name.starts_with("settings.json.invalid-")),
+            "{:?}",
+            names
+        );
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

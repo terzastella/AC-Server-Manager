@@ -68,21 +68,29 @@ fn sanitize(value: &str, label: &str, max: usize) -> Result<String, String> {
     Ok(trimmed.to_string())
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum ReserveError {
+    /// Dati non validi: risposta 400.
+    Invalid(String),
+    /// Nessuno slot disponibile: risposta 409.
+    NoSlot(String),
+}
+
 /// Scrive la prenotazione in uno slot libero, senza toccare formattazione e
 /// chiavi non gestite. Restituisce il testo aggiornato e l'indice dello slot.
 pub fn apply_reservation(
     text: &str,
     cap: usize,
     reservation: &Reservation,
-) -> Result<(String, usize), String> {
-    let driver = sanitize(&reservation.driver, "nome pilota", 40)?;
-    let car = sanitize(&reservation.car, "auto", 64)?;
-    let skin = sanitize(&reservation.skin, "livrea", 64)?;
+) -> Result<(String, usize), ReserveError> {
+    let driver = sanitize(&reservation.driver, "nome pilota", 40).map_err(ReserveError::Invalid)?;
+    let car = sanitize(&reservation.car, "auto", 64).map_err(ReserveError::Invalid)?;
+    let skin = sanitize(&reservation.skin, "livrea", 64).map_err(ReserveError::Invalid)?;
     if driver.is_empty() || car.is_empty() {
-        return Err(messages::tr(
+        return Err(ReserveError::Invalid(messages::tr(
             "nome pilota e auto sono obbligatori",
             "driver name and car are required",
-        ));
+        )));
     }
 
     let mut sections = ini::parse(text).sections;
@@ -124,10 +132,10 @@ pub fn apply_reservation(
         Some(index) => index,
         None => {
             if car_positions.len() >= cap && cap > 0 {
-                return Err(messages::tr(
+                return Err(ReserveError::NoSlot(messages::tr(
                     "nessuno slot libero: MAX_CLIENTS raggiunto",
                     "no free slot: MAX_CLIENTS reached",
-                ));
+                )));
             }
             let next = car_positions
                 .iter()

@@ -19,9 +19,26 @@ Le modifiche importanti del progetto. Formato basato su
   il comando fallisce e l'interfaccia lo mostra, invece di dare per salvato
   ciò che è rimasto solo in memoria.
 - Impostazioni scritte in modo atomico con file temporaneo univoco e verifica
-  del contenuto prima della sostituzione.
+  del contenuto prima della sostituzione; le scritture sono serializzate.
 - Processi esterni: il percorso deve essere assoluto e il nome del file
-  esattamente `acServer.exe` (prima bastava il suffisso).
+  esattamente `acServer.exe` (prima bastava il suffisso). Se il percorso non
+  è leggibile la terminazione viene rifiutata.
+- Porta API: se la porta scelta è occupata si usa la successiva e il link
+  d'invito punta a quella davvero aperta, non più a quella configurata.
+- Indice dei profili corrotto: non viene più sovrascritto, viene conservato
+  come `index.json.corrupt-<data>`.
+- `settings.json` non valido: conservato come `settings.json.invalid-<data>`
+  invece di essere sostituito in silenzio con i valori predefiniti.
+- Contenuti: identificativi con separatori, `..` o unità di disco vengono
+  rifiutati prima di costruire i percorsi di copia.
+- Junction dei profili creata con l'API di Windows, senza `cmd.exe`.
+- API: header malformati o duplicati, `Content-Length` non numerico e
+  `Transfer-Encoding` vengono rifiutati.
+- Prenotazioni: codici HTTP corretti (400 dati non validi, 409 nessuno slot,
+  500 errore interno) al posto di 200 con `ok: false`.
+- Rate limiter: gli IP inattivi vengono dimenticati e la mappa ha un tetto.
+- README: la descrizione degli slot ora parla di SteamID64 e non più di
+  blocco per solo nome.
 
 ## [1.0.2] - 2026-11-06
 

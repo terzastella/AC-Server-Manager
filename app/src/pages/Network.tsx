@@ -180,10 +180,13 @@ export function Network() {
       </div>
 
       <div className="grid grid-4">
-        <Stat label="IP selezionato" value={<span className="mono">{ip || "—"}</span>} />
-        <Stat label="Porta gioco" value={udpPort} hint="UDP" />
-        <Stat label="Porta HTTP" value={httpPort} hint="TCP" />
-        <Stat label="Adattatori" value={adapters.length} />
+        <Stat
+          label={t("network.statIp")}
+          value={<span className="mono">{ip || "—"}</span>}
+        />
+        <Stat label={t("network.statGamePort")} value={udpPort} hint="UDP" />
+        <Stat label={t("network.statHttpPort")} value={httpPort} hint="TCP" />
+        <Stat label={t("network.statAdapters")} value={adapters.length} />
       </div>
     </div>
   );

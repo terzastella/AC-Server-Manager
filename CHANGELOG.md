@@ -4,6 +4,23 @@ Le modifiche importanti del progetto. Formato basato su
 [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni
 [SemVer](https://semver.org/lang/it/).
 
+## [1.0.8] - 2026-11-08
+
+### Corretto
+
+- **Pagina Rete in inglese**: le etichette delle quattro statistiche (IP selezionato,
+  porta gioco, porta HTTP, adattatori) erano stringhe scritte a mano in italiano e
+  restavano tali anche con l'interfaccia in inglese. Ora passano dalle traduzioni
+  `network.stat*`, che esistevano già.
+
+### Manutenzione
+
+- `app/package-lock.json` allineato alla versione del progetto (era rimasto a `0.1.0`).
+- `settings.json` aggiunto a `.gitignore`: il pannello lo scrive accanto all'eseguibile
+  e contiene token d'invito e IP.
+- Documentato in `CONTRIBUTING.md` come attivare l'hook locale `pre-push`
+  (`git config core.hooksPath .githooks`).
+
 ## [1.0.7] - 2026-11-06
 
 ### Corretto
@@ -190,6 +207,7 @@ Prima release pubblica.
 - I binari non contengono più i percorsi assoluti della macchina di compilazione:
   `build.ps1` riscrive il profilo utente in `/build` (`--remap-path-prefix`).
 
+[1.0.8]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.8
 [1.0.7]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.7
 [1.0.6]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.6
 [1.0.5]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.5

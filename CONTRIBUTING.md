@@ -20,6 +20,13 @@ npm install
 npm run tauri dev
 ```
 
+The repository ships a local `pre-push` hook that blocks force-push and deletion
+of `main`. Git does not enable it automatically:
+
+```powershell
+git config core.hooksPath .githooks
+```
+
 ## Build and checks
 
 ```powershell
@@ -80,6 +87,13 @@ cd app; npm install; npm run tauri dev     # sviluppo
 cd app; npx tsc --noEmit                   # controllo tipi
 cd app\src-tauri; cargo test --lib         # test Rust
 cd app; .\build.ps1                        # build portable
+```
+
+Il repository include un hook `pre-push` che blocca force-push e cancellazione di
+`main`. Git non lo attiva da solo:
+
+```powershell
+git config core.hooksPath .githooks
 ```
 
 Regole pratiche: ogni testo visibile passa da i18n (chiave in `it` **e** `en`), i

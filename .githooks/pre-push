@@ -1,6 +1,6 @@
 #!/bin/sh
-# Blocca i push non fast-forward su main: vale come protezione locale del ramo
-# finche' la branch protection GitHub non e' disponibile (repo privata, piano Free).
+# Blocca i push non fast-forward su main (force-push e cancellazione del ramo):
+# protezione locale, attiva anche quando la branch protection di GitHub non c'e'.
 # Bypass voluto:  git push --no-verify
 zero="0000000000000000000000000000000000000000"
 

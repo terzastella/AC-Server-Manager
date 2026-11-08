@@ -28,6 +28,8 @@ results/
 setups/
 server-info.txt
 *.url
+# impostazioni del pannello scritte accanto all'exe: token d'invito, IP, nome pilota
+settings.json
 
 # --- documenti e script personali (restano in locale, fuori da git) ---
 NOTES.md

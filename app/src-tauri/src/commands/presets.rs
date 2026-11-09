@@ -63,20 +63,15 @@ pub fn save_preset(state: State<AppState>, name: String) -> Result<String, Strin
 /// collegamenti simbolici.
 fn preset_dir(root: &Path, name: &str) -> Result<PathBuf, String> {
     let base = root.join("presets");
-    let canonical_base = base.canonicalize().map_err(|error| error.to_string())?;
-    let canonical = base.join(name).canonicalize().map_err(|_| {
-        messages::tr(
+    crate::cm::presets::canonical_inside(&base.join(name), &base).map_err(|error| match error {
+        crate::cm::presets::ConfineError::Missing => messages::tr(
             &format!("preset {} non trovato", name),
             &format!("preset {} not found", name),
-        )
-    })?;
-    if canonical == canonical_base || !canonical.starts_with(&canonical_base) {
-        return Err(messages::tr(
-            "nome preset non valido",
-            "invalid preset name",
-        ));
-    }
-    Ok(canonical)
+        ),
+        crate::cm::presets::ConfineError::Outside => {
+            messages::tr("nome preset non valido", "invalid preset name")
+        }
+    })
 }
 
 #[tauri::command]

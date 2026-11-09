@@ -13,17 +13,17 @@ jobs:
     name: Build portable executables
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
           cache: npm
           cache-dependency-path: app/package-lock.json
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: app/src-tauri
 
@@ -37,6 +37,12 @@ jobs:
         run: |
           node scripts/check-i18n.mjs
           npx tsc --noEmit
+          npm audit --omit=dev --audit-level=high
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
+        with:
+          tool: cargo-audit
 
       - name: Rust checks
         working-directory: app/src-tauri
@@ -45,6 +51,7 @@ jobs:
           cargo fmt --check
           cargo clippy --all-targets --all-features -- -D warnings
           cargo test --lib
+          cargo audit
 
       - name: Build both executables
         working-directory: app
@@ -71,7 +78,7 @@ jobs:
           Get-Content dist/release-body.md -TotalCount 6
 
       - name: Upload to the release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           body_path: dist/release-body.md
           files: |

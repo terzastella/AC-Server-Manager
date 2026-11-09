@@ -139,7 +139,7 @@ pub fn read_values(text: &str) -> Assists {
 
 /// Riscrive il file aggiornando solo le 12 chiavi note. Commenti, ordine e
 /// chiavi sconosciute restano intatti (vedi `ini::apply`).
-pub fn apply_values(base: &str, values: &Assists) -> String {
+pub fn apply_values(base: &str, values: &Assists) -> Result<String, String> {
     let doc = ini::parse(base);
     let mut sections: Vec<Section> = doc
         .sections
@@ -193,7 +193,7 @@ pub fn save(path: &Path, values: &Assists) -> Result<(), String> {
     if path.is_file() {
         let _ = fs::copy(path, path.with_file_name("assists.ini.bak"));
     }
-    let text = apply_values(&base, values);
+    let text = apply_values(&base, values)?;
     let temp = path.with_file_name("assists.ini.tmp");
     fs::write(&temp, text).map_err(|error| error.to_string())?;
     fs::rename(&temp, path).map_err(|error| error.to_string())
@@ -236,7 +236,7 @@ mod tests {
         values.stability_control = 100;
         values.slipstream = 5;
 
-        let output = apply_values(SAMPLE, &values);
+        let output = apply_values(SAMPLE, &values).expect("apply");
         assert!(output.contains("; config"));
         assert!(output.contains("TRACTION_CONTROL=0"));
         assert!(output.contains("STABILITY_CONTROL=100"));
@@ -248,7 +248,7 @@ mod tests {
     #[test]
     fn apply_creates_section_and_all_keys() {
         let values = Assists::default();
-        let output = apply_values("", &values);
+        let output = apply_values("", &values).expect("apply");
         assert!(output.contains("[ASSISTS]"));
         for (key, _) in KEYS {
             assert!(output.contains(&format!("{key}=")), "manca {key}");

@@ -1,9 +1,62 @@
 use crate::ini;
 use serde::Serialize;
 use std::{
-    fs,
+    fmt, fs,
     path::{Path, PathBuf},
 };
+
+/// Esito del controllo di contenimento: "non esiste" e "fuori" sono errori diversi e
+/// i comandi mostrano messaggi diversi.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConfineError {
+    Missing,
+    Outside,
+}
+
+impl fmt::Display for ConfineError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ConfineError::Missing => write!(formatter, "percorso non trovato"),
+            ConfineError::Outside => write!(formatter, "percorso fuori dalla cartella consentita"),
+        }
+    }
+}
+
+/// Canonicalizza `candidate` e verifica che stia **dentro** `base`, mai uguale.
+/// Il confronto è su percorsi canonici, quindi regge anche junction e symlink.
+pub fn canonical_inside(candidate: &Path, base: &Path) -> Result<PathBuf, ConfineError> {
+    let canonical_base = base.canonicalize().map_err(|_| ConfineError::Missing)?;
+    let canonical = candidate
+        .canonicalize()
+        .map_err(|_| ConfineError::Missing)?;
+    if canonical == canonical_base || !canonical.starts_with(&canonical_base) {
+        return Err(ConfineError::Outside);
+    }
+    Ok(canonical)
+}
+
+/// Un preset importabile: il percorso canonico deve stare in una cartella
+/// `...\server\presets\<nome>`. Non serve un confronto testuale sul path.
+pub fn canonical_server_preset(source: &Path) -> Result<PathBuf, ConfineError> {
+    let canonical = source.canonicalize().map_err(|_| ConfineError::Missing)?;
+    if !canonical.is_dir() {
+        return Err(ConfineError::Missing);
+    }
+    let presets = canonical.parent().ok_or(ConfineError::Outside)?;
+    let server = presets.parent().ok_or(ConfineError::Outside)?;
+    let presets_ok = presets
+        .file_name()
+        .map(|name| name.eq_ignore_ascii_case("presets"))
+        .unwrap_or(false);
+    let server_ok = server
+        .file_name()
+        .map(|name| name.eq_ignore_ascii_case("server"))
+        .unwrap_or(false);
+    if !presets_ok || !server_ok {
+        return Err(ConfineError::Outside);
+    }
+    Ok(canonical)
+}
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CmServerPreset {
@@ -154,12 +207,38 @@ fn collect_presets(root: &Path, current: &Path, depth: usize, out: &mut Vec<CmUs
     }
 }
 
+/// Un link simbolico o una junction: copiarne il contenuto uscirebbe dal preset.
+fn is_link(file_type: &fs::FileType) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::FileTypeExt;
+        file_type.is_symlink_dir() || file_type.is_symlink_file()
+    }
+    #[cfg(not(windows))]
+    {
+        file_type.is_symlink()
+    }
+}
+
 fn copy_tree(source: &Path, destination: &Path) -> std::io::Result<()> {
     fs::create_dir_all(destination)?;
     for entry in fs::read_dir(source)? {
         let entry = entry?;
         let target = destination.join(entry.file_name());
-        if entry.file_type()?.is_dir() {
+        let file_type = entry.file_type()?;
+        // Un link dentro il preset potrebbe copiare contenuto fuori dalla cartella:
+        // canonicalizzare la radice non basta, il controllo va fatto su ogni voce.
+        // Su Windows anche le junction sono reparse point e vanno rifiutate.
+        if is_link(&file_type) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                format!(
+                    "link o junction non consentiti nel preset: {}",
+                    entry.path().display()
+                ),
+            ));
+        }
+        if file_type.is_dir() {
             copy_tree(&entry.path(), &target)?;
         } else {
             fs::copy(entry.path(), &target)?;
@@ -169,14 +248,12 @@ fn copy_tree(source: &Path, destination: &Path) -> std::io::Result<()> {
 }
 
 pub fn import_server_preset(source: &Path, destination_root: &Path) -> Result<PathBuf, String> {
-    if !source.is_dir() {
-        return Err(format!("preset non trovato: {}", source.display()));
-    }
-    let canonical = source.canonicalize().map_err(|error| error.to_string())?;
-    let lowered = canonical.to_string_lossy().to_lowercase();
-    if !lowered.contains("\\server\\presets\\") && !lowered.contains("/server/presets/") {
-        return Err("il preset non proviene da una cartella server\\presets".into());
-    }
+    let canonical = canonical_server_preset(source).map_err(|error| match error {
+        ConfineError::Missing => format!("preset non trovato: {}", source.display()),
+        ConfineError::Outside => {
+            "il preset non proviene da una cartella server\\presets".to_string()
+        }
+    })?;
 
     let name = dir_name(&canonical);
     let mut destination = destination_root.join(&name);
@@ -193,4 +270,68 @@ pub fn import_server_preset(source: &Path, destination_root: &Path) -> Result<Pa
 
     copy_tree(&canonical, &destination).map_err(|error| error.to_string())?;
     Ok(destination)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sandbox(tag: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("acsc-cm-{}-{}", tag, std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("server").join("presets").join("buono")).expect("preset");
+        fs::create_dir_all(root.join("server").join("altro")).expect("altro");
+        fs::write(
+            root.join("server")
+                .join("presets")
+                .join("buono")
+                .join("server_cfg.ini"),
+            "[SERVER]\n",
+        )
+        .expect("file");
+        root
+    }
+
+    #[test]
+    fn a_preset_inside_server_presets_is_accepted() {
+        let root = sandbox("ok");
+        let source = root.join("server").join("presets").join("buono");
+
+        let canonical = canonical_server_preset(&source).expect("preset valido");
+
+        assert!(canonical.ends_with("buono"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_folder_outside_server_presets_is_rejected() {
+        let root = sandbox("outside");
+        let source = root.join("server").join("altro");
+
+        assert_eq!(canonical_server_preset(&source), Err(ConfineError::Outside));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_missing_folder_is_reported_as_missing() {
+        let root = sandbox("missing");
+        let source = root.join("server").join("presets").join("manca");
+
+        assert_eq!(canonical_server_preset(&source), Err(ConfineError::Missing));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn canonical_inside_rejects_the_base_and_the_escapes() {
+        let root = sandbox("inside");
+        let base = root.join("server").join("presets");
+
+        assert!(canonical_inside(&base.join("buono"), &base).is_ok());
+        assert_eq!(canonical_inside(&base, &base), Err(ConfineError::Outside));
+        assert_eq!(
+            canonical_inside(&root.join("server").join("altro"), &base),
+            Err(ConfineError::Outside)
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
 }

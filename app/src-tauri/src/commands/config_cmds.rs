@@ -19,7 +19,7 @@ pub fn save_config(state: State<AppState>, sections: Vec<ini::Section>) -> Resul
     let base = read_text(&path)?;
     // senza backup il salvataggio non deve avvenire
     let backup = backup_cfg(&state)?;
-    let text = ini::apply(&base, &sections);
+    let text = ini::apply(&base, &sections)?;
     write_text_atomic(&path, &text)?;
     Ok(backup)
 }
@@ -114,7 +114,7 @@ fn remove_sections(text: &str, names: &[String]) -> String {
 
 /// Applica gli slot al file esistente: aggiorna solo le chiavi note, mantiene
 /// commenti, ordine e chiavi sconosciute, aggiunge o rimuove i blocchi necessari.
-pub(crate) fn apply_slots(base: &str, slots: &[CarSlot]) -> String {
+pub(crate) fn apply_slots(base: &str, slots: &[CarSlot]) -> Result<String, String> {
     let parsed = ini::parse(base);
     let mut car_names: Vec<String> = Vec::new();
     let mut model: Vec<ini::Section> = Vec::new();
@@ -138,9 +138,9 @@ pub(crate) fn apply_slots(base: &str, slots: &[CarSlot]) -> String {
         });
     }
 
-    let applied = ini::apply(base, &model);
+    let applied = ini::apply(base, &model)?;
     let extra: Vec<String> = car_names.iter().skip(slots.len()).cloned().collect();
-    remove_sections(&applied, &extra)
+    Ok(remove_sections(&applied, &extra))
 }
 
 #[derive(Clone, Serialize)]
@@ -174,7 +174,7 @@ pub fn save_entry_list(
     // file assente = profilo nuovo (si crea), errore di lettura = si annulla
     let base = read_text_or_empty(&path)?;
     let backup = backup_cfg(&state)?;
-    let text = apply_slots(&base, &slots);
+    let text = apply_slots(&base, &slots)?;
     write_text_atomic(&path, &text)?;
     Ok(backup)
 }
@@ -207,7 +207,7 @@ mod tests {
     fn keeps_comments_and_unknown_keys() {
         let base =
             "; lista\r\n[CAR_0]\r\nMODEL=old\r\n; commento interno\r\nUNKNOWN=7\r\nDRIVERNAME=\r\n";
-        let out = apply_slots(base, &[slot("Luca", "new")]);
+        let out = apply_slots(base, &[slot("Luca", "new")]).expect("slots");
         assert!(out.contains("; lista"));
         assert!(out.contains("; commento interno"));
         assert!(out.contains("UNKNOWN=7"));
@@ -218,7 +218,7 @@ mod tests {
     #[test]
     fn removes_extra_slots() {
         let base = "[CAR_0]\nMODEL=a\n[CAR_1]\nMODEL=b\n[CAR_2]\nMODEL=c\n";
-        let out = apply_slots(base, &[slot("A", "a")]);
+        let out = apply_slots(base, &[slot("A", "a")]).expect("slots");
         assert!(out.contains("[CAR_0]"));
         assert!(!out.contains("[CAR_1]"));
         assert!(!out.contains("[CAR_2]"));
@@ -227,7 +227,7 @@ mod tests {
     #[test]
     fn appends_missing_slots() {
         let base = "[CAR_0]\nMODEL=a\n";
-        let out = apply_slots(base, &[slot("A", "a"), slot("B", "b")]);
+        let out = apply_slots(base, &[slot("A", "a"), slot("B", "b")]).expect("slots");
         assert!(out.contains("[CAR_1]"));
         assert!(out.contains("DRIVERNAME=B"));
     }
@@ -235,13 +235,13 @@ mod tests {
     #[test]
     fn keeps_crlf() {
         let base = "[CAR_0]\r\nMODEL=a\r\n";
-        let out = apply_slots(base, &[slot("A", "a")]);
+        let out = apply_slots(base, &[slot("A", "a")]).expect("slots");
         assert!(out.contains("\r\n"));
     }
 
     #[test]
     fn empty_base_creates_slots() {
-        let out = apply_slots("", &[slot("A", "a"), slot("B", "b")]);
+        let out = apply_slots("", &[slot("A", "a"), slot("B", "b")]).expect("slots");
         assert!(out.contains("[CAR_0]"));
         assert!(out.contains("[CAR_1]"));
         assert!(out.contains("DRIVERNAME=A"));

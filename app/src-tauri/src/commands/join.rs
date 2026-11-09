@@ -130,7 +130,12 @@ pub fn launch_game(
         "CAR_0",
         &[("MODEL", car), ("SKIN", skin), ("DRIVER_NAME", name)],
     );
-    let text = ini::apply(&base, &sections);
+    let text = ini::apply(&base, &sections).map_err(|error| {
+        messages::tr(
+            &format!("valore non valido per race.ini: {}", error),
+            &format!("invalid value for race.ini: {}", error),
+        )
+    })?;
     std::fs::write(&path, text).map_err(|error| error.to_string())?;
 
     let acs = Path::new(&game_dir).join("acs.exe");

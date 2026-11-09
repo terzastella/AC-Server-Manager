@@ -170,7 +170,8 @@ pub fn apply_reservation(
         .position(|index| *index == target)
         .unwrap_or(car_positions.len());
 
-    Ok((ini::apply(text, &sections), position))
+    let text = ini::apply(text, &sections).map_err(ReserveError::Invalid)?;
+    Ok((text, position))
 }
 
 #[cfg(test)]

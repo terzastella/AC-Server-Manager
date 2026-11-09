@@ -53,9 +53,41 @@ pub fn parse(text: &str) -> Doc {
     }
 }
 
+/// Rifiuta chiavi, valori e nomi di sezione con caratteri di controllo, CR/LF inclusi:
+/// un valore scritto con un a capo può iniettare righe e chiavi nella sezione successiva.
+pub fn reject_control_characters(sections: &[Section]) -> Result<(), String> {
+    for section in sections {
+        if section.name.chars().any(char::is_control) {
+            return Err(format!(
+                "nome di sezione con caratteri di controllo: {:?}",
+                section.name
+            ));
+        }
+        for entry in &section.entries {
+            if entry.key.chars().any(char::is_control) {
+                return Err(format!(
+                    "chiave con caratteri di controllo: {:?}",
+                    entry.key
+                ));
+            }
+            if entry.value.chars().any(char::is_control) {
+                return Err(format!(
+                    "valore con caratteri di controllo nella sezione {} (chiave {})",
+                    section.name, entry.key
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Rewrites the INI applying the model while keeping the original layout,
 /// comments and any key the UI does not know about.
-pub fn apply(base: &str, sections: &[Section]) -> String {
+///
+/// Returns an error when a value contains a control character: the file is not
+/// written at all rather than written with an injected line.
+pub fn apply(base: &str, sections: &[Section]) -> Result<String, String> {
+    reject_control_characters(sections)?;
     let newline = if base.contains("\r\n") { "\r\n" } else { "\n" };
 
     let mut model: HashMap<String, Vec<(String, String)>> = HashMap::new();
@@ -134,7 +166,7 @@ pub fn apply(base: &str, sections: &[Section]) -> String {
         }
     }
 
-    out
+    Ok(out)
 }
 
 fn append_missing(
@@ -175,7 +207,7 @@ mod tests {
 
         let mut sections = doc.sections.clone();
         sections[0].entries[0].value = "New".into();
-        let output = apply(base, &sections);
+        let output = apply(base, &sections).expect("apply");
         assert!(output.contains("; comment"));
         assert!(output.contains("NAME=New"));
         assert!(output.contains("UNKNOWN=42"));
@@ -208,8 +240,30 @@ mod tests {
                 }],
             },
         ];
-        let output = apply(base, &sections);
+        let output = apply(base, &sections).expect("apply");
         assert!(output.contains("PASSWORD=x"));
         assert!(output.contains("[RACE]"));
+    }
+
+    #[test]
+    fn a_value_with_a_newline_is_rejected() {
+        let sections = vec![Section {
+            name: "SERVER".into(),
+            entries: vec![Entry {
+                key: "NAME".into(),
+                value: "prima\n[REMOTE]\nACTIVE=1".into(),
+            }],
+        }];
+        let error = apply("", &sections).expect_err("deve rifiutare");
+        assert!(error.contains("caratteri di controllo"));
+    }
+
+    #[test]
+    fn a_section_name_with_a_newline_is_rejected() {
+        let sections = vec![Section {
+            name: "SERVER\nRACE".into(),
+            entries: vec![],
+        }];
+        assert!(apply("", &sections).is_err());
     }
 }

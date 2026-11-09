@@ -4,6 +4,23 @@ Le modifiche importanti del progetto. Formato basato su
 [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni
 [SemVer](https://semver.org/lang/it/).
 
+## [1.0.13] - 2026-11-09
+
+### Corretto
+
+- **Caricamento dei preset transazionale**: i tre file vengono letti e validati in
+  memoria prima di toccare `cfg/`; il backup e la scrittura avvengono sotto lo stesso
+  lock e, se una scrittura fallisce, i file tornano al contenuto precedente (quelli
+  creati in quel momento vengono rimossi). Prima un errore a metà poteva lasciare la
+  configurazione aggiornata solo in parte, e il backup veniva creato prima del lock.
+- **`save_preset` allineato al caricamento**: anche il salvataggio rifiuta i
+  collegamenti invece di seguirli con `Path::is_file()`.
+
+### Test
+
+- 2 test nuovi (scrittura fallita con ripristino della configurazione, preset con
+  junction rifiutato già in lettura): totale 93 attivi + 4 ignorati.
+
 ## [1.0.12] - 2026-11-09
 
 ### Sicurezza
@@ -286,6 +303,7 @@ Prima release pubblica.
 - I binari non contengono più i percorsi assoluti della macchina di compilazione:
   `build.ps1` riscrive il profilo utente in `/build` (`--remap-path-prefix`).
 
+[1.0.13]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.13
 [1.0.12]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.12
 [1.0.11]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.11
 [1.0.10]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.10

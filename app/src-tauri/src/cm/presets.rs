@@ -334,4 +334,27 @@ mod tests {
         );
         let _ = fs::remove_dir_all(&root);
     }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_junction_inside_a_preset_is_refused() {
+        let root = sandbox("junction");
+        let source = root.join("server").join("presets").join("buono");
+        let outside = root.join("server").join("altro");
+        fs::write(outside.join("segreto.txt"), "fuori").expect("file fuori");
+        // Una junction dentro il preset punta fuori dalla cartella: copiarla
+        // porterebbe contenuto estraneo dentro la configurazione.
+        junction::create(&outside, source.join("link")).expect("junction creata");
+
+        let error = import_server_preset(&source, &root.join("dest"))
+            .expect_err("la junction deve essere rifiutata");
+        assert!(
+            error.to_lowercase().contains("link") || error.to_lowercase().contains("junction"),
+            "{}",
+            error
+        );
+        assert!(!root.join("dest").join("link").exists());
+
+        let _ = fs::remove_dir_all(&root);
+    }
 }

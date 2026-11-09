@@ -4,6 +4,32 @@ Le modifiche importanti del progetto. Formato basato su
 [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni
 [SemVer](https://semver.org/lang/it/).
 
+## [1.0.11] - 2026-11-09
+
+### Sicurezza
+
+- **Caratteri di controllo nei file INI**: `ini::apply` ora restituisce `Result` e rifiuta
+  CR/LF (e ogni carattere di controllo) in nomi di sezione, chiavi e valori, invece di
+  scriverli nel file. Vale per `server_cfg.ini`, `entry_list.ini`, `welcome.txt`,
+  `race.ini` e `assists.ini`: un valore con un a capo non può più iniettare righe o
+  chiavi nella sezione successiva. Tutti i chiamanti mostrano un messaggio bilingue.
+- **Contenimento dei preset unificato**: `canonical_inside` + `ConfineError` sono usati
+  sia dal caricamento dei preset sia dall'import da Content Manager, con errori distinti
+  per "non trovato" e "fuori dalla cartella consentita".
+- **Link e junction nei preset importati**: `copy_tree` rifiuta collegamenti simbolici e
+  junction, quindi un preset non può trascinare dentro `cfg/` file che stanno fuori.
+  Aggiunto un test che crea una junction reale su Windows e verifica il rifiuto.
+
+### Manutenzione
+
+- **Supply chain**: `npm audit` e `cargo audit` eseguiti anche nel workflow di release.
+- **Action GitHub pinnate al commit SHA** (con il tag in commento), non più solo `@v4`/`@v2`.
+
+### Test
+
+- 7 test nuovi (contenimento preset, junction, iniezione di righe negli INI): il totale
+  passa a 88 attivi + 4 ignorati.
+
 ## [1.0.10] - 2026-11-09
 
 ### Corretto
@@ -236,6 +262,7 @@ Prima release pubblica.
 - I binari non contengono più i percorsi assoluti della macchina di compilazione:
   `build.ps1` riscrive il profilo utente in `/build` (`--remap-path-prefix`).
 
+[1.0.11]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.11
 [1.0.10]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.10
 [1.0.9]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.9
 [1.0.8]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.8

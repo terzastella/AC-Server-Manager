@@ -25,7 +25,7 @@ jobs:
         run: npm ci
 
       - name: Audit dependencies
-        run: npm audit --omit=dev --audit-level=high
+        run: npm audit --audit-level=high
 
       - name: Check translations
         run: node scripts/check-i18n.mjs

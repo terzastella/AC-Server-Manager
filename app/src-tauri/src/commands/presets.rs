@@ -74,6 +74,37 @@ fn preset_dir(root: &Path, name: &str) -> Result<PathBuf, String> {
     })
 }
 
+/// Copia un file di un preset solo se è un file regolare. `Path::is_file()`
+/// segue i collegamenti: un symlink o una junction con il nome di un file di
+/// configurazione porterebbe dentro `cfg/` il contenuto di un file esterno.
+fn copy_preset_file(from: &Path, to: &Path) -> Result<(), String> {
+    let metadata =
+        fs::symlink_metadata(from).map_err(|error| format!("{}: {}", from.display(), error))?;
+    #[cfg(windows)]
+    let is_link = {
+        use std::os::windows::fs::FileTypeExt;
+        let file_type = metadata.file_type();
+        file_type.is_symlink_dir() || file_type.is_symlink_file()
+    };
+    #[cfg(not(windows))]
+    let is_link = metadata.file_type().is_symlink();
+    if is_link || !metadata.is_file() {
+        return Err(messages::tr(
+            &format!(
+                "il preset contiene un collegamento al posto di un file: {}",
+                from.display()
+            ),
+            &format!(
+                "the preset contains a link instead of a file: {}",
+                from.display()
+            ),
+        ));
+    }
+    fs::copy(from, to)
+        .map(|_| ())
+        .map_err(|error| format!("{}: {}", from.display(), error))
+}
+
 #[tauri::command]
 pub fn load_preset(state: State<AppState>, name: String) -> Result<(), String> {
     let directory = preset_dir(&state.server_dir(), &name)?;
@@ -90,8 +121,10 @@ pub fn load_preset(state: State<AppState>, name: String) -> Result<(), String> {
     let destination = state.cfg_dir();
     for file in ["server_cfg.ini", "entry_list.ini", "welcome.txt"] {
         let from = directory.join(file);
-        if from.is_file() {
-            fs::copy(&from, destination.join(file)).map_err(|error| error.to_string())?;
+        match fs::symlink_metadata(&from) {
+            Ok(_) => copy_preset_file(&from, &destination.join(file))?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("{}: {}", from.display(), error)),
         }
     }
     Ok(())
@@ -148,6 +181,43 @@ mod tests {
         assert!(preset_dir(&root, "manca").is_err());
         let absolute = root.join("fuori").to_string_lossy().to_string();
         assert!(preset_dir(&root, &absolute).is_err());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_regular_preset_file_is_copied() {
+        let root = sandbox("copy");
+        let from = root.join("presets").join("buono").join("server_cfg.ini");
+        fs::write(&from, "[SERVER]\nNAME=Test\n").expect("file");
+        let to = root.join("copia.ini");
+
+        copy_preset_file(&from, &to).expect("copia");
+
+        assert_eq!(
+            fs::read_to_string(&to).expect("letto"),
+            "[SERVER]\nNAME=Test\n"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_junction_named_like_a_preset_file_is_refused() {
+        let root = sandbox("link");
+        let preset = root.join("presets").join("buono");
+        // una junction con il nome di un file di configurazione: `fs::copy` la
+        // seguirebbe e copierebbe contenuto che sta fuori dal preset
+        junction::create(root.join("fuori"), preset.join("welcome.txt")).expect("junction");
+
+        let error = copy_preset_file(&preset.join("welcome.txt"), &root.join("welcome.txt"))
+            .expect_err("la junction deve essere rifiutata");
+
+        assert!(
+            error.to_lowercase().contains("collegamento") || error.to_lowercase().contains("link"),
+            "{}",
+            error
+        );
+        assert!(!root.join("welcome.txt").exists());
         let _ = fs::remove_dir_all(&root);
     }
 }

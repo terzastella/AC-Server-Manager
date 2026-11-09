@@ -184,8 +184,24 @@ pub fn read_welcome(state: State<AppState>) -> Result<String, String> {
     read_text(&state.cfg_dir().join("welcome.txt"))
 }
 
+/// `welcome.txt` è testo libero: le interruzioni di riga e le tabulazioni sono
+/// legittime, gli altri caratteri di controllo no (rompono il messaggio e non
+/// servono a niente).
+fn validate_welcome(text: &str) -> Result<(), String> {
+    if text.chars().any(|character| {
+        character.is_control() && character != '\r' && character != '\n' && character != '\t'
+    }) {
+        return Err(messages::tr(
+            "il messaggio di benvenuto contiene caratteri di controllo non ammessi",
+            "the welcome message contains unsupported control characters",
+        ));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn save_welcome(state: State<AppState>, text: String) -> Result<(), String> {
+    validate_welcome(&text)?;
     // stesso lock dei preset: welcome.txt fa parte dello stesso snapshot
     let _guard = entry_lock().lock().unwrap();
     write_text_atomic(&state.cfg_dir().join("welcome.txt"), &text)
@@ -246,5 +262,15 @@ mod tests {
         assert!(out.contains("[CAR_1]"));
         assert!(out.contains("DRIVERNAME=A"));
         assert!(out.contains("DRIVERNAME=B"));
+    }
+
+    #[test]
+    fn welcome_allows_newlines_but_not_other_control_characters() {
+        assert!(validate_welcome("Benvenuti!\r\nBuona gara\r\n").is_ok());
+        assert!(validate_welcome("colonna\tok").is_ok());
+        assert!(validate_welcome("").is_ok());
+        assert!(validate_welcome("nullo\0").is_err());
+        assert!(validate_welcome("escape\x1b").is_err());
+        assert!(validate_welcome("verticale\x0b").is_err());
     }
 }

@@ -4,6 +4,30 @@ Le modifiche importanti del progetto. Formato basato su
 [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni
 [SemVer](https://semver.org/lang/it/).
 
+## [1.0.12] - 2026-11-09
+
+### Sicurezza
+
+- **File dei preset controllati uno per uno**: `load_preset` copiava i tre file dopo un
+  controllo `Path::is_file()`, che segue i collegamenti. Un symlink o una junction con
+  il nome di `server_cfg.ini`, `entry_list.ini` o `welcome.txt` avrebbe portato dentro
+  `cfg/` il contenuto di un file esterno. Ora ogni file deve essere un file regolare e
+  non un collegamento, altrimenti il caricamento si ferma.
+- **`welcome.txt`**: la validazione dei caratteri di controllo valeva solo per i file
+  INI; ora anche il messaggio di benvenuto rifiuta i caratteri di controllo diversi da
+  CR, LF e tabulazione, come già dichiarato nelle note della 1.0.11.
+
+### Manutenzione
+
+- **Audit npm completo**: `npm audit` controlla anche le dipendenze di sviluppo, in CI
+  e nella pipeline di release, perché Vite, TypeScript e la CLI di Tauri fanno parte
+  della catena di build.
+
+### Test
+
+- 3 test nuovi (copia di un file regolare, junction con il nome di un file di
+  configurazione, validazione di `welcome.txt`): totale 91 attivi + 4 ignorati.
+
 ## [1.0.11] - 2026-11-09
 
 ### Sicurezza
@@ -262,6 +286,7 @@ Prima release pubblica.
 - I binari non contengono più i percorsi assoluti della macchina di compilazione:
   `build.ps1` riscrive il profilo utente in `/build` (`--remap-path-prefix`).
 
+[1.0.12]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.12
 [1.0.11]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.11
 [1.0.10]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.10
 [1.0.9]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.9

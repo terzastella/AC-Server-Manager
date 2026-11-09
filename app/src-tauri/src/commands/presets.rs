@@ -57,9 +57,31 @@ pub fn save_preset(state: State<AppState>, name: String) -> Result<String, Strin
     Ok(destination.to_string_lossy().to_string())
 }
 
+/// Cartella di un preset, verificata: il nome arriva dall'interfaccia e non deve
+/// poter uscire da `presets/` (né con `..`, né con percorsi assoluti o separatori).
+/// Il confronto è fatto su percorsi canonici, quindi vale anche con junction e
+/// collegamenti simbolici.
+fn preset_dir(root: &Path, name: &str) -> Result<PathBuf, String> {
+    let base = root.join("presets");
+    let canonical_base = base.canonicalize().map_err(|error| error.to_string())?;
+    let canonical = base.join(name).canonicalize().map_err(|_| {
+        messages::tr(
+            &format!("preset {} non trovato", name),
+            &format!("preset {} not found", name),
+        )
+    })?;
+    if canonical == canonical_base || !canonical.starts_with(&canonical_base) {
+        return Err(messages::tr(
+            "nome preset non valido",
+            "invalid preset name",
+        ));
+    }
+    Ok(canonical)
+}
+
 #[tauri::command]
 pub fn load_preset(state: State<AppState>, name: String) -> Result<(), String> {
-    let directory = state.server_dir().join("presets").join(&name);
+    let directory = preset_dir(&state.server_dir(), &name)?;
     if !directory.is_dir() {
         return Err(messages::tr(
             &format!("preset {} non trovato", name),
@@ -105,4 +127,32 @@ pub fn list_backups(state: State<AppState>) -> Vec<BackupInfo> {
         .collect();
     backups.sort_by_key(|item| std::cmp::Reverse(item.modified));
     backups
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sandbox(tag: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("acsc-preset-{}-{}", tag, std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("presets").join("buono")).expect("preset");
+        fs::create_dir_all(root.join("fuori")).expect("cartella fuori");
+        fs::write(root.join("fuori").join("server_cfg.ini"), "[SERVER]\n").expect("file");
+        root
+    }
+
+    #[test]
+    fn preset_name_cannot_escape_the_presets_folder() {
+        let root = sandbox("escape");
+        assert!(preset_dir(&root, "buono").is_ok());
+        // `..`, percorsi relativi che risalgono e percorsi assoluti: rifiutati
+        assert!(preset_dir(&root, "..").is_err());
+        assert!(preset_dir(&root, "../fuori").is_err());
+        assert!(preset_dir(&root, r"..\fuori").is_err());
+        assert!(preset_dir(&root, "manca").is_err());
+        let absolute = root.join("fuori").to_string_lossy().to_string();
+        assert!(preset_dir(&root, &absolute).is_err());
+        let _ = fs::remove_dir_all(&root);
+    }
 }

@@ -4,6 +4,16 @@ Le modifiche importanti del progetto. Formato basato su
 [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni
 [SemVer](https://semver.org/lang/it/).
 
+## [1.0.10] - 2026-11-09
+
+### Corretto
+
+- **Caricamento dei preset**: `load_preset` costruiva il percorso della cartella con
+  il nome ricevuto dall'interfaccia senza controllarlo, quindi `..`, separatori o
+  percorsi assoluti potevano puntare fuori da `presets/`. Ora il percorso viene
+  canonizzato e deve restare dentro `presets/`, con lo stesso criterio già usato in
+  salvataggio. Nessun cambiamento per i preset esistenti.
+
 ## [1.0.9] - 2026-11-09
 
 ### Modificato
@@ -226,6 +236,7 @@ Prima release pubblica.
 - I binari non contengono più i percorsi assoluti della macchina di compilazione:
   `build.ps1` riscrive il profilo utente in `/build` (`--remap-path-prefix`).
 
+[1.0.10]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.10
 [1.0.9]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.9
 [1.0.8]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.8
 [1.0.7]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.7

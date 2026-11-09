@@ -38,10 +38,11 @@ Out of scope:
 - **Local config.** `settings.json` (next to the executable) holds the invite token,
   the API port, the driver name and the saved invites. `cfg/server_cfg.ini` holds the
   admin password. Both stay out of git.
-- **Booking API.** Listens on `0.0.0.0` so friends over a VPN can reach it; every
-  request needs the token that is part of the invite link, with a per-IP rate limit.
-  It can read the server summary and write into `entry_list.ini` only through the
-  booking endpoint, which validates driver, car and skin.
+- **Booking API.** Listens on `127.0.0.1` by default: you pick the VPN adapter in the
+  Invite page when friends must reach it. Every request needs the invite token, sent
+  **only** as an `Authorization: Bearer` header (never in the URL or the body), with a
+  per-IP rate limit. It can read the server summary and write into `entry_list.ini`
+  only through the booking endpoint, which validates driver, car and skin.
 - **Content Manager.** Settings are read only; `Values.data` is never written.
 - **Protocol handler.** `acservercontrol://join?...` is registered per user in HKCU
   and only forwards the arguments to the launcher window.
@@ -75,8 +76,11 @@ Indica cosa hai trovato, come riprodurlo, la versione/commit e l'impatto atteso.
 - Nessuna telemetria e nessun servizio cloud: tutto resta sul PC.
 - `settings.json` (token d'invito, porta API, nome pilota) e `cfg/server_cfg.ini`
   (password admin) non vengono versionati.
-- L'API delle prenotazioni richiede il token contenuto nel link d'invito, ha un limite
-  di richieste per IP e scrive in `entry_list.ini` solo tramite l'endpoint di prenotazione.
+- L'API delle prenotazioni ascolta su `127.0.0.1` per impostazione predefinita:
+  l'indirizzo della VPN si sceglie dalla pagina Invito. Richiede il token d'invito
+  inviato **solo** nell'header `Authorization: Bearer` (mai nell'URL o nel corpo),
+  ha un limite di richieste per IP e scrive in `entry_list.ini` solo tramite
+  l'endpoint di prenotazione.
 - Content Manager è letto in sola lettura: `Values.data` non viene mai scritto.
 - Nessun auto-update e nessun codice scaricato dalla rete.
 

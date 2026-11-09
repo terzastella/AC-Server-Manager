@@ -109,7 +109,9 @@ In pratica:
 6. Assetto Corsa entra nel server, nello slot prenotato.
 
 Il manager parla con il server su `HTTP_PORT` (default 8081) e pubblica una piccola
-API per il launcher su `API_PORT` (default 8082), protetta da token con limite di
+API per il launcher su `API_PORT` (default 8082). L'API ascolta su `127.0.0.1` per
+impostazione predefinita — l'indirizzo della VPN si sceglie dalla pagina Invito — e
+ogni richiesta porta il token nell'header `Authorization: Bearer`, con limite di
 richieste per IP.
 
 ## Requisiti
@@ -200,9 +202,10 @@ chiavi dei file `.ini` e il contenuto dei log del server.
 ## Sicurezza
 
 - Tutto gira in locale: nessuna telemetria, nessun servizio cloud, nessun account.
-- L'API delle prenotazioni è protetta da un token casuale incluso nel link d'invito,
-  ha un limite di richieste per IP ed espone solo ciò che serve al launcher
-  (informazioni sul server e prenotazione dello slot).
+- L'API delle prenotazioni ascolta su `127.0.0.1` a meno che tu non scelga un'altra
+  interfaccia, ed è protetta da un token casuale inviato nell'header
+  `Authorization: Bearer` (mai nell'URL), con limite di richieste per IP; espone solo
+  ciò che serve al launcher (informazioni sul server e prenotazione dello slot).
 - Password admin e token stanno in `settings.json` e `cfg/server_cfg.ini`, esclusi
   dal repository.
 - L'API deve essere raggiungibile solo dai tuoi amici: tienila dentro la VPN, oppure

@@ -131,7 +131,9 @@ pub fn apply_reservation(
     let target = match already.or(same_car).or(any_free) {
         Some(index) => index,
         None => {
-            if car_positions.len() >= cap && cap > 0 {
+            // `cap` è il tetto di MAX_CLIENTS: 0 o assente non è una scorciatoia
+            // per "illimitato", altrimenti l'entry list crescerebbe senza limite.
+            if car_positions.len() >= cap {
                 return Err(ReserveError::NoSlot(messages::tr(
                     "nessuno slot libero: MAX_CLIENTS raggiunto",
                     "no free slot: MAX_CLIENTS reached",
@@ -217,6 +219,13 @@ mod tests {
     fn refuses_when_cap_reached() {
         let full = BASE.replace("DRIVERNAME=\r\nGUID=", "DRIVERNAME=Giulia\r\nGUID=xyz");
         assert!(apply_reservation(&full, 2, &reservation("Luca", "bmw_z4_gt3", "one")).is_err());
+    }
+
+    #[test]
+    fn refuses_to_add_when_cap_is_zero() {
+        // MAX_CLIENTS mancante o a zero: niente slot nuovi, mai "illimitato".
+        let full = BASE.replace("DRIVERNAME=\r\nGUID=", "DRIVERNAME=Giulia\r\nGUID=xyz");
+        assert!(apply_reservation(&full, 0, &reservation("Luca", "bmw_z4_gt3", "one")).is_err());
     }
 
     #[test]

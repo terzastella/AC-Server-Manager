@@ -109,8 +109,10 @@ Step by step:
 6. Assetto Corsa joins the server, in the booked slot.
 
 The manager talks to the server on `HTTP_PORT` (default 8081) and exposes a small
-API for the launcher on `API_PORT` (default 8082), protected by a token with
-per-IP rate limiting.
+API for the launcher on `API_PORT` (default 8082). The API listens on `127.0.0.1`
+by default — pick the VPN adapter in the Invite page to let friends in — and every
+request carries the invite token as an `Authorization: Bearer` header, with per-IP
+rate limiting.
 
 ## Requirements
 
@@ -199,8 +201,10 @@ content are intentionally not translated.
 ## Security
 
 - Runs locally: no telemetry, no cloud service, no external account.
-- The booking API is protected by a random token included in the invite link, rate
-  limited per IP, and only exposes what the launcher needs (server info, slot booking).
+- The booking API listens on `127.0.0.1` unless you pick another interface, and is
+  protected by a random token sent as an `Authorization: Bearer` header (never in the
+  URL), rate limited per IP, exposing only what the launcher needs (server info and
+  slot booking).
 - Admin password and invite tokens live in `settings.json` and `cfg/server_cfg.ini`,
   both excluded from the repository.
 - The booking API is meant to be reachable by your friends only: keep it inside your

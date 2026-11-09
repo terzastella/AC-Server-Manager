@@ -4,6 +4,25 @@ Le modifiche importanti del progetto. Formato basato su
 [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni
 [SemVer](https://semver.org/lang/it/).
 
+## [1.0.9] - 2026-11-09
+
+### Modificato
+
+- **L'API delle prenotazioni ascolta solo su questo PC per impostazione predefinita**:
+  il bind predefinito passa da `0.0.0.0` a `127.0.0.1`. Per far entrare gli amici si
+  sceglie l'indirizzo della VPN dalla pagina Invito (serve riavviare l'app). Le
+  impostazioni già salvate restano com'erano.
+- **Token solo nell'header**: `Authorization: Bearer`. Rimosso il fallback sul
+  parametro `token` della query e sul campo `token` del corpo JSON, che finiva nei log
+  dei proxy e nella cronologia. I launcher 1.0.2 e successivi usano già l'header; i
+  launcher 1.0.0–1.0.1 non sono più compatibili.
+
+### Corretto
+
+- **Slot senza limite**: con `MAX_CLIENTS` mancante o non valido il tetto veniva
+  ignorato e le prenotazioni potevano aggiungere slot all'infinito. Ora la richiesta
+  fallisce con un messaggio esplicito.
+
 ## [1.0.8] - 2026-11-08
 
 ### Corretto
@@ -207,6 +226,7 @@ Prima release pubblica.
 - I binari non contengono più i percorsi assoluti della macchina di compilazione:
   `build.ps1` riscrive il profilo utente in `/build` (`--remap-path-prefix`).
 
+[1.0.9]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.9
 [1.0.8]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.8
 [1.0.7]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.7
 [1.0.6]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.6

@@ -32,8 +32,11 @@ pub struct InviteSettings {
     pub expires_at: Option<i64>,
 }
 
+/// Di default l'API ascolta solo su questo PC: per far entrare gli amici si
+/// sceglie l'indirizzo della VPN (o la scheda di rete) dalla pagina Invito,
+/// invece di esporre l'API su tutte le interfacce senza chiedere.
 fn default_bind() -> String {
-    "0.0.0.0".into()
+    "127.0.0.1".into()
 }
 
 impl Default for InviteSettings {
@@ -411,11 +414,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn old_settings_without_bind_listen_on_all_interfaces() {
+    fn old_settings_without_bind_stay_local() {
         let json =
             r##"{"name":"AC","token":"abc","accent":"#ff5a1f","banner":"","api_port":8082}"##;
         let settings: InviteSettings = serde_json::from_str(json).expect("json valido");
-        assert_eq!(settings.api_bind, "0.0.0.0");
+        assert_eq!(settings.api_bind, "127.0.0.1");
         assert!(settings.expires_at.is_none());
     }
 

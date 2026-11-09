@@ -113,7 +113,6 @@ fn valid_steam_id64(guid: &str) -> bool {
 struct Request {
     method: String,
     path: String,
-    query: HashMap<String, String>,
     headers: HashMap<String, String>,
     body: Vec<u8>,
 }
@@ -124,17 +123,14 @@ enum RequestError {
     TooLarge,
 }
 
-fn split_target(target: &str) -> (String, HashMap<String, String>) {
-    let (path, query) = target.split_once('?').unwrap_or((target, ""));
-    let params = query
-        .split('&')
-        .filter(|pair| !pair.is_empty())
-        .map(|pair| {
-            let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
-            (key.to_lowercase(), value.to_string())
-        })
-        .collect();
-    (path.to_string(), params)
+/// Il percorso senza query. La query non è più una sorgente di credenziali, quindi
+/// viene scartata qui: un `?token=` nel link non lo legge nessuno.
+fn split_target(target: &str) -> String {
+    target
+        .split_once('?')
+        .map(|(path, _)| path)
+        .unwrap_or(target)
+        .to_string()
 }
 
 /// Legge una richiesta HTTP con limiti espliciti su riga, header e corpo.
@@ -202,33 +198,30 @@ fn read_request<R: BufRead>(reader: &mut R) -> Result<Request, RequestError> {
         return Err(RequestError::Malformed);
     }
 
-    let (path, query) = split_target(&target);
+    let path = split_target(&target);
     Ok(Request {
         method,
         path,
-        query,
         headers,
         body,
     })
 }
 
-/// Token dall'header `Authorization: Bearer`, con fallback sul parametro
-/// (GET) o sul campo `token` del corpo (POST) per i client più vecchi.
-fn provided_token(request: &Request, body: Option<&serde_json::Value>) -> String {
-    if let Some(value) = request.headers.get("authorization") {
-        for prefix in ["Bearer ", "bearer "] {
-            if let Some(rest) = value.strip_prefix(prefix) {
-                return rest.trim().to_string();
-            }
-        }
-    }
-    if let Some(value) = request.query.get("token") {
-        return value.clone();
-    }
-    body.and_then(|value| value.get("token"))
-        .and_then(|value| value.as_str())
-        .unwrap_or("")
-        .to_string()
+/// Token solo dall'header `Authorization: Bearer`. Le vecchie vie (parametro
+/// della query e campo `token` nel corpo JSON) sono state rimosse: finivano nei
+/// log dei proxy e nella cronologia del browser. I launcher 1.0.2 e successivi
+/// usano già l'header.
+fn provided_token(request: &Request) -> String {
+    request
+        .headers
+        .get("authorization")
+        .and_then(|value| {
+            value
+                .strip_prefix("Bearer ")
+                .or_else(|| value.strip_prefix("bearer "))
+        })
+        .map(|value| value.trim().to_string())
+        .unwrap_or_default()
 }
 
 fn server_payload(state: &AppState) -> serde_json::Value {
@@ -380,9 +373,17 @@ fn reserve(state: &AppState, body: &serde_json::Value) -> Result<usize, ReserveF
             &format!("skin not found for car {}", car),
         )));
     }
+    // MAX_CLIENTS è il tetto degli slot: se manca o è scritto male non si
+    // prenota nulla, altrimenti l'entry list potrebbe crescere senza limite.
     let cap = commands::section_value(&sections, "SERVER", "MAX_CLIENTS")
-        .and_then(|value| value.parse::<usize>().ok())
-        .unwrap_or(0);
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .ok_or_else(|| {
+            ReserveFailure::Internal(messages::tr(
+                "MAX_CLIENTS mancante o non valido in server_cfg.ini",
+                "MAX_CLIENTS missing or invalid in server_cfg.ini",
+            ))
+        })?;
 
     // il lock è già preso sopra, prima di leggere la configurazione
     let path = state.cfg_dir().join("entry_list.ini");
@@ -493,7 +494,7 @@ fn serve_connection(mut stream: TcpStream, backend: &dyn ApiBackend) {
                     json!({"ok": false, "error": messages::tr("troppe richieste", "too many requests")}),
                 );
             }
-            if !backend.authorized(&provided_token(&request, None)) {
+            if !backend.authorized(&provided_token(&request)) {
                 return respond(
                     &mut stream,
                     403,
@@ -520,7 +521,7 @@ fn serve_connection(mut stream: TcpStream, backend: &dyn ApiBackend) {
                     )
                 }
             };
-            if !backend.authorized(&provided_token(&request, Some(&parsed))) {
+            if !backend.authorized(&provided_token(&request)) {
                 return respond(
                     &mut stream,
                     403,
@@ -882,12 +883,12 @@ mod tests {
     }
 
     #[test]
-    fn parses_request_with_query_and_headers() {
+    fn parses_path_without_query_and_keeps_headers() {
         let raw = "GET /api/server?token=abc&x=1 HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer abc\r\n\r\n";
         let request = read_request(&mut reader(raw)).expect("richiesta valida");
         assert_eq!(request.method, "GET");
+        // la query viene scartata: non è più una via per il token
         assert_eq!(request.path, "/api/server");
-        assert_eq!(request.query.get("token").map(String::as_str), Some("abc"));
         assert_eq!(
             request.headers.get("authorization").map(String::as_str),
             Some("Bearer abc")
@@ -949,24 +950,27 @@ mod tests {
     }
 
     #[test]
-    fn token_prefers_authorization_header() {
+    fn token_comes_only_from_the_authorization_header() {
         let raw = "GET /api/server?token=vecchio HTTP/1.1\r\nAuthorization: Bearer nuovo\r\n\r\n";
         let request = read_request(&mut reader(raw)).expect("richiesta valida");
-        assert_eq!(provided_token(&request, None), "nuovo");
-    }
+        assert_eq!(provided_token(&request), "nuovo");
 
-    #[test]
-    fn token_falls_back_to_query_then_body() {
+        // la query non vale più come credenziale
         let request = read_request(&mut reader("GET /api/server?token=query HTTP/1.1\r\n\r\n"))
             .expect("richiesta valida");
-        assert_eq!(provided_token(&request, None), "query");
+        assert_eq!(provided_token(&request), "");
 
+        // nemmeno il corpo JSON
         let request = read_request(&mut reader("POST /api/reserve HTTP/1.1\r\n\r\n"))
             .expect("richiesta valida");
-        assert_eq!(
-            provided_token(&request, Some(&json!({"token": "corpo"}))),
-            "corpo"
-        );
+        assert_eq!(provided_token(&request), "");
+
+        // schema diverso da Bearer: nessun token
+        let request = read_request(&mut reader(
+            "GET /api/server HTTP/1.1\r\nAuthorization: Basic eA==\r\n\r\n",
+        ))
+        .expect("richiesta valida");
+        assert_eq!(provided_token(&request), "");
     }
     struct FakeBackend {
         token: String,
@@ -1042,8 +1046,8 @@ mod tests {
         assert!(response.starts_with("HTTP/1.1 200"), "{}", response);
         assert!(response.contains("Test"));
 
-        // prenotazione con token nel corpo
-        let body = "{\"token\":\"abc\"}";
+        // token nel corpo: non è più accettato, serve l'header
+        let body = "{\"token\":\"abc\",\"driver\":\"Player\"}";
         let response = tcp_request(
             port,
             &format!(
@@ -1052,7 +1056,7 @@ mod tests {
                 body
             ),
         );
-        assert!(response.contains("\"slot\":2"), "{}", response);
+        assert!(response.starts_with("HTTP/1.1 403"), "{}", response);
 
         server.join().expect("server");
     }

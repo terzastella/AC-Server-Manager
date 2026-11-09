@@ -126,6 +126,7 @@ export function Invite() {
               onChange={(event) => update({ api_bind: event.target.value })}
               title={t("invite.bindHint")}
             >
+              <option value="127.0.0.1">{t("invite.bindLocal")}</option>
               <option value="0.0.0.0">{t("invite.bindAll")}</option>
               {adapters.map((adapter) => (
                 <option key={adapter.ip} value={adapter.ip}>
@@ -135,6 +136,9 @@ export function Invite() {
             </select>
             {draft.api_bind === "0.0.0.0" && (
               <span className="field-warn">{t("invite.bindWarning")}</span>
+            )}
+            {draft.api_bind === "127.0.0.1" && (
+              <span className="field-warn">{t("invite.bindLocalWarning")}</span>
             )}
           </label>
           <label className="field">

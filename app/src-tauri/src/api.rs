@@ -207,21 +207,23 @@ fn read_request<R: BufRead>(reader: &mut R) -> Result<Request, RequestError> {
     })
 }
 
-/// Token solo dall'header `Authorization: Bearer`. Le vecchie vie (parametro
-/// della query e campo `token` nel corpo JSON) sono state rimosse: finivano nei
-/// log dei proxy e nella cronologia del browser. I launcher 1.0.2 e successivi
-/// usano già l'header.
+/// Token solo dall'header `Authorization: Bearer`. Lo schema di autenticazione è
+/// case-insensitive (RFC 7235), quindi valgono `Bearer`, `bearer` e ogni altra
+/// combinazione. Le vecchie vie (parametro della query e campo `token` nel corpo
+/// JSON) sono state rimosse: finivano nei log dei proxy e nella cronologia.
 fn provided_token(request: &Request) -> String {
-    request
-        .headers
-        .get("authorization")
-        .and_then(|value| {
-            value
-                .strip_prefix("Bearer ")
-                .or_else(|| value.strip_prefix("bearer "))
-        })
-        .map(|value| value.trim().to_string())
-        .unwrap_or_default()
+    let Some(value) = request.headers.get("authorization") else {
+        return String::new();
+    };
+    let (scheme, token) = match value.split_once(' ') {
+        Some((scheme, token)) => (scheme, token.trim()),
+        None => return String::new(),
+    };
+    if scheme.eq_ignore_ascii_case("bearer") {
+        token.to_string()
+    } else {
+        String::new()
+    }
 }
 
 fn server_payload(state: &AppState) -> serde_json::Value {
@@ -461,8 +463,13 @@ trait ApiBackend {
 }
 
 fn serve_connection(mut stream: TcpStream, backend: &dyn ApiBackend) {
-    let _ = stream.set_read_timeout(Some(IO_TIMEOUT));
-    let _ = stream.set_write_timeout(Some(IO_TIMEOUT));
+    // Se i timeout non si possono impostare la connessione non è protetta da
+    // slowloris: meglio chiuderla subito che servirla senza limiti.
+    if stream.set_read_timeout(Some(IO_TIMEOUT)).is_err()
+        || stream.set_write_timeout(Some(IO_TIMEOUT)).is_err()
+    {
+        return;
+    }
 
     let peer = stream
         .peer_addr()
@@ -971,6 +978,13 @@ mod tests {
         ))
         .expect("richiesta valida");
         assert_eq!(provided_token(&request), "");
+
+        // lo schema è case-insensitive
+        let request = read_request(&mut reader(
+            "GET /api/server HTTP/1.1\r\nAuthorization: BEARER maiuscolo\r\n\r\n",
+        ))
+        .expect("richiesta valida");
+        assert_eq!(provided_token(&request), "maiuscolo");
     }
     struct FakeBackend {
         token: String,

@@ -4,6 +4,32 @@ Le modifiche importanti del progetto. Formato basato su
 [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni
 [SemVer](https://semver.org/lang/it/).
 
+## [1.0.15] - 2026-11-10
+
+### Corretto
+
+- **Schema di autenticazione case-insensitive**: `Authorization: BEARER …` e ogni altra
+  combinazione vengono accettate (RFC 7235); prima funzionavano solo `Bearer` e
+  `bearer`.
+- **Timeout non impostabili**: se il socket non accetta i timeout di lettura/scrittura
+  la connessione viene chiusa subito, invece di essere servita senza protezione
+  anti-slowloris.
+- **Token d'invito assente**: la pagina Invito mostra un avviso esplicito quando il
+  token è vuoto (CSPRNG non disponibile), invece di lasciare inviti silenziosamente
+  inutilizzabili.
+
+### Manutenzione
+
+- **Version checker più completo**: confronta anche la prima sezione del CHANGELOG e,
+  quando gira su un tag, verifica che il tag coincida con la versione dei manifest.
+- README: documentato che l'elenco delle schede di rete è solo IPv4 (gli inviti usano
+  IPv4; il bind dell'API accetta comunque un IPv6 scritto a mano).
+
+### Test
+
+- Esteso il test dell'header `Authorization` alle varianti maiuscole: 94 attivi +
+  4 ignorati.
+
 ## [1.0.14] - 2026-11-10
 
 ### Corretto
@@ -320,6 +346,7 @@ Prima release pubblica.
 - I binari non contengono più i percorsi assoluti della macchina di compilazione:
   `build.ps1` riscrive il profilo utente in `/build` (`--remap-path-prefix`).
 
+[1.0.15]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.15
 [1.0.14]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.14
 [1.0.13]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.13
 [1.0.12]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.12

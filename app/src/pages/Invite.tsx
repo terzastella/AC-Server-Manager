@@ -230,6 +230,9 @@ export function Invite() {
             <div>
               <span>Token</span>
               <code>{draft.token}</code>
+              {draft.token.trim() === "" && (
+                <span className="field-warn">{t("invite.tokenMissing")}</span>
+              )}
             </div>
             <div>
               <span>{t("invite.apiPort")}</span>

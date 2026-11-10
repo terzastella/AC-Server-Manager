@@ -196,6 +196,9 @@ content are intentionally not translated.
 - **Content must already exist** on the server: the app copies and checks cars, tracks
   and weather, but never downloads mods.
 - **Windows only** (WebView2): no Linux or macOS build.
+- **Network adapter list is IPv4 only**: invites use IPv4, because the Assetto Corsa
+  server and `race.ini` do not handle IPv6 reliably. The API bind field still accepts
+  an IPv6 address typed by hand.
 - **No code signing** yet, see *Downloads and integrity*.
 
 ## Security

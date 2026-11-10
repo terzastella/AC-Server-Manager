@@ -197,6 +197,9 @@ chiavi dei file `.ini` e il contenuto dei log del server.
 - **I contenuti devono già esistere** sul server: l'app copia e verifica auto, piste e
   meteo, ma non scarica mod.
 - **Solo Windows** (WebView2): nessuna build Linux o macOS.
+- **Elenco delle schede di rete solo IPv4**: gli inviti usano IPv4, perché il server
+  di Assetto Corsa e `race.ini` non gestiscono IPv6 in modo affidabile. Il campo di
+  bind dell'API accetta comunque un indirizzo IPv6 scritto a mano.
 - **Nessuna firma del codice**, vedi *Download e integrità*.
 
 ## Sicurezza

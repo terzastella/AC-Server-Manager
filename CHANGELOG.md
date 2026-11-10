@@ -4,6 +4,23 @@ Le modifiche importanti del progetto. Formato basato su
 [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni
 [SemVer](https://semver.org/lang/it/).
 
+## [1.0.14] - 2026-11-10
+
+### Corretto
+
+- **Rollback dei preset**: lo snapshot della configurazione usava
+  `fs::read_to_string(...).ok()`, quindi un file esistente ma illeggibile (permessi,
+  byte non UTF-8) veniva trattato come assente e in fase di ripristino sarebbe stato
+  cancellato. Ora un file illeggibile blocca il caricamento **prima** di scrivere.
+- **Ripristino non silenzioso**: gli errori durante il rollback non vengono più
+  ignorati; se il ripristino è incompleto l'errore lo dice e rimanda ai backup in
+  `backups/`.
+
+### Test
+
+- 1 test nuovo (file illeggibile lasciato intatto) e il test di rollback esteso al
+  file creato durante il caricamento: totale 94 attivi + 4 ignorati.
+
 ## [1.0.13] - 2026-11-09
 
 ### Corretto
@@ -303,6 +320,7 @@ Prima release pubblica.
 - I binari non contengono più i percorsi assoluti della macchina di compilazione:
   `build.ps1` riscrive il profilo utente in `/build` (`--remap-path-prefix`).
 
+[1.0.14]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.14
 [1.0.13]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.13
 [1.0.12]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.12
 [1.0.11]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.11

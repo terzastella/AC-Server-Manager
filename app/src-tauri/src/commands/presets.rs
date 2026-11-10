@@ -135,29 +135,82 @@ fn read_preset_files(directory: &Path) -> Result<Vec<(String, String)>, String> 
     Ok(staged)
 }
 
+/// Contenuto precedente di un file di configurazione: assente, oppure il testo
+/// esatto da rimettere in caso di rollback.
+enum Previous {
+    Missing,
+    Content(String),
+}
+
+/// Legge il contenuto precedente. Un file assente è normale; un file che c'è ma
+/// non si legge (permessi, byte non UTF-8) non lo è: senza il contenuto
+/// precedente il rollback potrebbe cancellare un file che va ripristinato,
+/// quindi ci si ferma prima di scrivere qualsiasi cosa.
+fn snapshot_file(path: &Path) -> Result<Previous, String> {
+    match fs::read_to_string(path) {
+        Ok(text) => Ok(Previous::Content(text)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Previous::Missing),
+        Err(error) => Err(messages::tr(
+            &format!(
+                "impossibile leggere la configurazione attuale ({}): nessuna modifica applicata",
+                error
+            ),
+            &format!(
+                "cannot read the current configuration ({}): no change applied",
+                error
+            ),
+        )),
+    }
+}
+
 /// Scrive i file già validati nella configurazione, con rollback: se una
 /// scrittura fallisce i file tornano al contenuto precedente (e quelli creati
-/// ora vengono rimossi), poi l'errore viene propagato. Il chiamante tiene il
-/// lock di `entry_list.ini`.
+/// ora vengono rimossi). Se anche il ripristino fallisce, l'errore lo dice
+/// esplicitamente invece di dichiarare riuscito ciò che non lo è.
+/// Il chiamante tiene il lock di `entry_list.ini`.
 fn apply_preset_files(cfg_dir: &Path, files: &[(String, String)]) -> Result<(), String> {
-    let previous: Vec<(String, Option<String>)> = files
-        .iter()
-        .map(|(name, _)| (name.clone(), fs::read_to_string(cfg_dir.join(name)).ok()))
-        .collect();
+    let mut previous: Vec<(String, Previous)> = Vec::new();
+    for (name, _) in files {
+        previous.push((name.clone(), snapshot_file(&cfg_dir.join(name))?));
+    }
 
     for (name, text) in files {
         if let Err(error) = write_text_atomic(&cfg_dir.join(name), text) {
-            for (old_name, old_text) in &previous {
-                match old_text {
-                    Some(restore) => {
-                        let _ = write_text_atomic(&cfg_dir.join(old_name), restore);
+            let mut rollback_errors: Vec<String> = Vec::new();
+            for (old_name, old) in &previous {
+                let restored: Result<(), String> = match old {
+                    Previous::Content(restore) => {
+                        write_text_atomic(&cfg_dir.join(old_name), restore)
                     }
-                    None => {
-                        let _ = fs::remove_file(cfg_dir.join(old_name));
-                    }
+                    Previous::Missing => match fs::remove_file(cfg_dir.join(old_name)) {
+                        Ok(()) => Ok(()),
+                        // il file non è stato creato (la scrittura è fallita prima): va bene
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                        Err(error) => Err(error.to_string()),
+                    },
+                };
+                if let Err(rollback_error) = restored {
+                    rollback_errors.push(format!("{}: {}", old_name, rollback_error));
                 }
             }
-            return Err(error);
+            if rollback_errors.is_empty() {
+                return Err(messages::tr(
+                    &format!("{}, la configurazione è stata ripristinata", error),
+                    &format!("{}, the configuration was restored", error),
+                ));
+            }
+            return Err(messages::tr(
+                &format!(
+                    "{}; ripristino incompleto ({}): controlla i backup in backups/",
+                    error,
+                    rollback_errors.join("; ")
+                ),
+                &format!(
+                    "{}; incomplete rollback ({}): check the backups in backups/",
+                    error,
+                    rollback_errors.join("; ")
+                ),
+            ));
         }
     }
     Ok(())
@@ -300,10 +353,12 @@ mod tests {
         let cfg = root.join("cfg");
         fs::create_dir_all(&cfg).expect("cfg");
         fs::write(cfg.join("server_cfg.ini"), "vecchio").expect("file");
-        // una cartella al posto del secondo file: la scrittura fallisce
+        // una cartella al posto dell'ultimo file: la scrittura fallisce
         fs::create_dir_all(cfg.join("entry_list.ini")).expect("cartella");
 
         let files = vec![
+            // creato dal caricamento: in rollback deve sparire
+            ("welcome.txt".to_string(), "ciao".to_string()),
             ("server_cfg.ini".to_string(), "nuovo".to_string()),
             ("entry_list.ini".to_string(), "contenuto".to_string()),
         ];
@@ -313,6 +368,33 @@ mod tests {
         assert_eq!(
             fs::read_to_string(cfg.join("server_cfg.ini")).expect("letto"),
             "vecchio"
+        );
+        assert!(
+            !cfg.join("welcome.txt").exists(),
+            "il file creato durante il caricamento deve essere rimosso"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_configuration_that_cannot_be_read_stops_before_writing() {
+        let root =
+            std::env::temp_dir().join(format!("acsc-preset-unreadable-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let cfg = root.join("cfg");
+        fs::create_dir_all(&cfg).expect("cfg");
+        // il file esiste ma non è UTF-8: non si può leggere per ripristinarlo
+        let original = vec![0xFFu8, 0xFE, 0x00, 0x01];
+        fs::write(cfg.join("server_cfg.ini"), &original).expect("file");
+
+        let files = vec![("server_cfg.ini".to_string(), "nuovo".to_string())];
+        let error = apply_preset_files(&cfg, &files).expect_err("deve fermarsi prima di scrivere");
+
+        assert!(!error.is_empty());
+        // il file originale resta intatto: non sovrascritto né cancellato
+        assert_eq!(
+            fs::read(cfg.join("server_cfg.ini")).expect("letto"),
+            original
         );
         let _ = fs::remove_dir_all(&root);
     }

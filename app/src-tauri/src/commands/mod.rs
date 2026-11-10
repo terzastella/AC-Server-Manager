@@ -73,7 +73,8 @@ pub(crate) fn read_text_or_empty(path: &Path) -> Result<String, String> {
 }
 
 /// Scrittura atomica: file temporaneo, rilettura di controllo, poi rename.
-/// Se qualcosa fallisce il file originale resta intatto.
+/// Se qualcosa fallisce il file originale resta intatto e il temporaneo viene
+/// rimosso: nessun `.tmp` orfano in giro.
 pub(crate) fn write_text_atomic(path: &Path, text: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
@@ -85,20 +86,28 @@ pub(crate) fn write_text_atomic(path: &Path, text: &str) -> Result<(), String> {
     // nome univoco per singola scrittura: due salvataggi non si pestano
     let seq = WRITE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let temp = path.with_file_name(format!("{}.{}.{}.tmp", file_name, std::process::id(), seq));
-    fs::write(&temp, text).map_err(|error| format!("{}: {}", temp.display(), error))?;
-    let written =
-        fs::read_to_string(&temp).map_err(|error| format!("{}: {}", temp.display(), error))?;
-    if written != text {
+    if let Err(error) = write_and_verify(&temp, text) {
         let _ = fs::remove_file(&temp);
-        return Err(messages::tr(
-            "scrittura incompleta: il file originale non è stato modificato",
-            "incomplete write: the original file was left untouched",
-        ));
+        return Err(error);
     }
     fs::rename(&temp, path).map_err(|error| {
         let _ = fs::remove_file(&temp);
         format!("{}: {}", path.display(), error)
     })
+}
+
+/// Scrive il temporaneo e rilegge il contenuto prima del rename.
+fn write_and_verify(temp: &Path, text: &str) -> Result<(), String> {
+    fs::write(temp, text).map_err(|error| format!("{}: {}", temp.display(), error))?;
+    let written =
+        fs::read_to_string(temp).map_err(|error| format!("{}: {}", temp.display(), error))?;
+    if written != text {
+        return Err(messages::tr(
+            "scrittura incompleta: il file originale non è stato modificato",
+            "incomplete write: the original file was left untouched",
+        ));
+    }
+    Ok(())
 }
 
 pub(crate) fn config_sections(state: &AppState) -> Vec<ini::Section> {
@@ -305,6 +314,26 @@ mod stamp_tests {
 
         assert_ne!(first, second);
         assert_ne!(second, 0);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_failed_write_leaves_no_temporary_file() {
+        let dir = std::env::temp_dir().join(format!("acsc-atomic-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("cartella");
+        // la destinazione è una cartella: il rename finale non può riuscire
+        let target = dir.join("occupato");
+        fs::create_dir_all(target.join("dentro")).expect("cartella");
+
+        assert!(write_text_atomic(&target, "x").is_err());
+
+        let temporaries = fs::read_dir(&dir)
+            .expect("dir")
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"))
+            .count();
+        assert_eq!(temporaries, 0, "nessun .tmp deve restare dopo l'errore");
         let _ = fs::remove_dir_all(&dir);
     }
 }

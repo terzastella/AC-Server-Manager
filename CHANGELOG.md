@@ -4,6 +4,27 @@ Le modifiche importanti del progetto. Formato basato su
 [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni
 [SemVer](https://semver.org/lang/it/).
 
+## [1.0.17] - 2026-11-10
+
+### Corretto
+
+- **SteamID64 nel launcher**: l'account id letto da `ActiveUser` viene accettato solo entro i 32 bit
+  e sommato alla base con aritmetica controllata; un valore fuori intervallo ferma il join invece di
+  produrre un GUID che il server avrebbe rifiutato.
+- **Profili**: anche i profili già elencati in `index.json` (non solo quelli ricostruiti dalla
+  cartella) vengono scartati se la loro directory è diventata una junction o un link oppure se lo è
+  la sottocartella `cfg/`.
+- **`race.ini` nel launcher**: il backup viene scritto solo dopo la validazione della
+  configurazione, subito prima della scrittura atomica: un join annullato prima non aggiorna la copia.
+- **Scrittura atomica**: il file `.tmp` viene rimosso anche quando falliscono la scrittura del
+  temporaneo o la rilettura di controllo; prima restava sul disco.
+
+### Test
+
+- 5 test nuovi (conversione SteamID64 valida e fuori intervallo, profilo indicizzato diventato
+  junction, profilo con `cfg/` junction, nessun `.tmp` residuo dopo un errore): totale 103 attivi +
+  4 ignorati.
+
 ## [1.0.16] - 2026-11-10
 
 ### Corretto
@@ -364,6 +385,7 @@ Prima release pubblica.
 - I binari non contengono più i percorsi assoluti della macchina di compilazione:
   `build.ps1` riscrive il profilo utente in `/build` (`--remap-path-prefix`).
 
+[1.0.17]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.17
 [1.0.16]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.16
 [1.0.15]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.15
 [1.0.14]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.14

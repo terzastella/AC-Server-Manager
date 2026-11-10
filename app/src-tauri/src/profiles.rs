@@ -69,6 +69,28 @@ fn is_link(file_type: &std::fs::FileType) -> bool {
     }
 }
 
+/// Cartella reale: una junction o un link simbolico non conta, `Path::is_dir()`
+/// li seguirebbe.
+fn is_real_dir(path: &Path) -> bool {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata.file_type().is_dir() && !is_link(&metadata.file_type()),
+        Err(_) => false,
+    }
+}
+
+/// Profilo utilizzabile: la cartella è reale e, quando esiste, lo è anche
+/// `cfg/`; `content/` può essere una junction (è il contenuto condiviso).
+fn is_usable_profile_dir(path: &Path) -> bool {
+    if !is_real_dir(path) {
+        return false;
+    }
+    match std::fs::symlink_metadata(path.join("cfg")) {
+        Ok(_) => is_real_dir(&path.join("cfg")),
+        // profilo senza cfg: le operazioni che lo usano creano la cartella
+        Err(_) => true,
+    }
+}
+
 /// Profili presenti sul disco ma non nell'indice (indice perso o corrotto):
 /// si ricostruiscono dalla cartella, così non spariscono dalla UI.
 fn scan_existing(root: &Path) -> Vec<ProfileEntry> {
@@ -89,7 +111,9 @@ fn scan_existing(root: &Path) -> Vec<ProfileEntry> {
                 return None;
             }
             let path = entry.path();
-            if !path.join("cfg").is_dir() && !path.join("content").exists() {
+            // `cfg` deve essere una cartella vera: una junction dentro un profilo
+            // porterebbe altrove le configurazioni
+            if !is_real_dir(&path.join("cfg")) && !path.join("content").exists() {
                 return None;
             }
             Some(ProfileEntry {
@@ -111,10 +135,13 @@ pub fn load(root: &Path) -> ProfileIndex {
         Ok(text) => match serde_json::from_str::<ProfileIndex>(&text) {
             Ok(mut index) => {
                 // Un indice modificato a mano o scritto da una versione diversa non
-                // deve poter puntare fuori da `profiles/` né duplicare gli id.
+                // deve poter puntare fuori da `profiles/` (junction comprese), né
+                // duplicare gli id.
                 let mut seen = std::collections::HashSet::new();
                 index.profiles.retain(|entry| {
-                    let usable = entry.legacy || valid_slug(&entry.slug);
+                    let usable = entry.legacy
+                        || (valid_slug(&entry.slug)
+                            && is_usable_profile_dir(&profile_dir(root, entry)));
                     usable && seen.insert(entry.id.clone())
                 });
                 if !index.profiles.iter().any(|entry| entry.legacy) {
@@ -757,6 +784,59 @@ mod corrupt_index_tests {
                 .iter()
                 .map(|entry| entry.slug.clone())
                 .collect::<Vec<_>>()
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn an_indexed_profile_that_became_a_junction_is_dropped() {
+        let root = std::env::temp_dir().join(format!("acsc-index-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("profiles")).expect("profiles");
+        let outside = root.join("altrove");
+        std::fs::create_dir_all(outside.join("cfg")).expect("cfg fuori");
+        // l'indice è valido ma la cartella del profilo è una junction
+        junction::create(&outside, root.join("profiles").join("serata")).expect("junction");
+        std::fs::write(
+            root.join("profiles").join("index.json"),
+            r#"{"version":1,"active":"serata","profiles":[{"id":"serata","name":"Serata","slug":"serata","legacy":false}]}"#,
+        )
+        .expect("indice");
+
+        let index = load(&root);
+
+        assert!(
+            index.profiles.iter().all(|entry| entry.slug != "serata"),
+            "un profilo già indicizzato diventato junction non deve restare"
+        );
+        assert_eq!(index.active, "default");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_profile_with_a_junction_cfg_is_dropped() {
+        let root = std::env::temp_dir().join(format!("acsc-cfg-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("profiles")).expect("profiles");
+        let outside = root.join("altrove");
+        std::fs::create_dir_all(&outside).expect("fuori");
+        let profile = root.join("profiles").join("serata");
+        std::fs::create_dir_all(&profile).expect("profilo");
+        // la cartella è vera ma `cfg` porta altrove: stesse scritture, altro disco
+        junction::create(&outside, profile.join("cfg")).expect("junction");
+        std::fs::write(
+            root.join("profiles").join("index.json"),
+            r#"{"version":1,"active":"default","profiles":[{"id":"serata","name":"Serata","slug":"serata","legacy":false}]}"#,
+        )
+        .expect("indice");
+
+        let index = load(&root);
+
+        assert!(
+            index.profiles.iter().all(|entry| entry.slug != "serata"),
+            "un profilo con cfg junction non deve restare"
         );
         let _ = std::fs::remove_dir_all(&root);
     }

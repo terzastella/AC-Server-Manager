@@ -1,5 +1,21 @@
 use super::*;
 
+/// Converte il valore `ActiveUser` (`0x...`) in SteamID64. L'account id è a
+/// 32 bit: un valore fuori intervallo viene scartato subito, invece di produrre
+/// un GUID che il server rifiuterebbe.
+fn steam_id64_from_hex(hex: &str) -> Option<String> {
+    /// `76561197960265728` + account id
+    const STEAM_ID64_BASE: u64 = 76_561_197_960_265_728;
+    let digits = hex.strip_prefix("0x").or_else(|| hex.strip_prefix("0X"))?;
+    let account = u64::from_str_radix(digits, 16).ok()?;
+    if account == 0 || account > u64::from(u32::MAX) {
+        return None;
+    }
+    STEAM_ID64_BASE
+        .checked_add(account)
+        .map(|steam_id| steam_id.to_string())
+}
+
 /// SteamID64 dell'utente locale: serve a `entry_list.ini` (`GUID=`) perché AC
 /// faccia entrare nello slot prenotato. Da `HKCU\Software\Valve\Steam\ActiveProcess`.
 #[cfg(windows)]
@@ -20,11 +36,7 @@ fn steam_id64() -> Option<String> {
     let token = text
         .split_whitespace()
         .find(|token| token.starts_with("0x"))?;
-    let account = u64::from_str_radix(&token[2..], 16).ok()?;
-    if account == 0 {
-        return None;
-    }
-    Some((76_561_197_960_265_728u64 + account).to_string())
+    steam_id64_from_hex(token)
 }
 
 #[cfg(not(windows))]
@@ -135,8 +147,6 @@ pub fn launch_game(
     let path = cfg_dir.join("race.ini");
     // un file illeggibile non va mai trattato come vuoto: si sovrascriverebbe
     let base = read_race_base(&path)?;
-    // senza backup riuscito il join non deve modificare race.ini
-    backup_race_ini(&path)?;
     let mut sections = ini::parse(&base).sections;
     // senza SteamID64 la prenotazione non può combaciare: meglio fermarsi qui
     // che avviare il gioco con un GUID vuoto che non entra nello slot
@@ -173,6 +183,10 @@ pub fn launch_game(
             &format!("invalid value for race.ini: {}", error),
         )
     })?;
+    // backup solo a configurazione già valida, subito prima della scrittura: la
+    // copia resta l'ultimo stato precedente a un join che arriva in fondo, e un
+    // join annullato prima non la tocca
+    backup_race_ini(&path)?;
     write_text_atomic(&path, &text)?;
 
     let acs = Path::new(&game_dir).join("acs.exe");
@@ -236,5 +250,28 @@ mod tests {
             .count();
         assert_eq!(temporary, 0, "nessun file temporaneo deve restare");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_active_user_becomes_a_steam_id64() {
+        assert_eq!(
+            steam_id64_from_hex("0x1").as_deref(),
+            Some("76561197960265729")
+        );
+        assert_eq!(
+            steam_id64_from_hex("0xFFFFFFFF").as_deref(),
+            Some("76561202255233023")
+        );
+    }
+
+    #[test]
+    fn an_account_id_out_of_range_is_rejected() {
+        // zero e valori oltre i 32 bit non sono account individuali validi
+        assert!(steam_id64_from_hex("0x0").is_none());
+        assert!(steam_id64_from_hex("0x100000000").is_none());
+        assert!(steam_id64_from_hex("0xFFFFFFFFFFFFFFFF").is_none());
+        // prefisso assente o cifre non esadecimali
+        assert!(steam_id64_from_hex("1a2b").is_none());
+        assert!(steam_id64_from_hex("0xzz").is_none());
     }
 }

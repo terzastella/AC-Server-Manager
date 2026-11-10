@@ -32,6 +32,26 @@ Out of scope:
 - Issues that require physical access to an already-compromised machine
 - Denial of service against your own server from your own machine
 
+## Dependency advisories
+
+`app/src-tauri/.cargo/audit.toml` tells `cargo audit` to skip two advisories. Both belong to the same
+chain — `glib` and `glib-macros`, pulled in by `gtk` through `tao`/`tauri` — which is compiled on Linux
+only, never on Windows:
+
+- `RUSTSEC-2024-0429` (`glib`, unsound `VariantStrIter` iterators): fixed upstream in `glib` 0.20, which
+  `tao` 0.37.2 (latest) does not use yet, because `gtk 0.18` requires `glib ^0.18`.
+- `RUSTSEC-2024-0370` (`proc-macro-error`, unmaintained): a proc-macro of `glib-macros`, same chain.
+
+Verify with:
+
+```powershell
+cd app/src-tauri
+cargo tree -i glib --target x86_64-pc-windows-msvc             # nothing to print
+cargo tree -i proc-macro-error --target x86_64-pc-windows-msvc # nothing to print
+```
+
+Removing the ignore list makes `cargo audit` report exactly these two entries and nothing else.
+
 ## Security model (what the app does and does not do)
 
 - **No telemetry, no cloud.** Nothing leaves the machine unless you send an invite link.
@@ -70,6 +90,26 @@ Solo l'ultima release riceve correzioni di sicurezza.
 https://github.com/terzastella/AC-Server-Manager/security/advisories/new
 
 Indica cosa hai trovato, come riprodurlo, la versione/commit e l'impatto atteso.
+
+## Advisory sulle dipendenze
+
+`app/src-tauri/.cargo/audit.toml` dice a `cargo audit` di saltare due advisory. Appartengono alla stessa
+catena — `glib` e `glib-macros`, tirati dentro da `gtk` tramite `tao`/`tauri` — che viene compilata solo
+su Linux, mai su Windows:
+
+- `RUSTSEC-2024-0429` (`glib`, iteratori `VariantStrIter` unsound): corretto a monte in `glib` 0.20, che
+  `tao` 0.37.2 (l'ultima) non usa ancora, perché `gtk 0.18` richiede `glib ^0.18`.
+- `RUSTSEC-2024-0370` (`proc-macro-error`, non mantenuto): proc-macro di `glib-macros`, stessa catena.
+
+Verifica con:
+
+```powershell
+cd app/src-tauri
+cargo tree -i glib --target x86_64-pc-windows-msvc             # nothing to print
+cargo tree -i proc-macro-error --target x86_64-pc-windows-msvc # nothing to print
+```
+
+Togliendo la lista di ignore, `cargo audit` segnala esattamente queste due voci e nient'altro.
 
 ## Modello di sicurezza in breve
 

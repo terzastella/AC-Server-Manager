@@ -6,6 +6,6 @@
 ignore = [
     # glib: catena GTK che Tauri usa solo su Linux. Non compilato per Windows.
     "RUSTSEC-2024-0429",
-    # proc-macro-error: dipendenza di build, non presente nel binario finale.
+    # proc-macro-error: proc-macro di glib-macros, stessa catena GTK Linux-only.
     "RUSTSEC-2024-0370",
 ]

@@ -65,6 +65,36 @@ fn set_values(sections: &mut Vec<ini::Section>, name: &str, pairs: &[(&str, Stri
     }
 }
 
+/// Legge il `race.ini` esistente: un file assente vale come vuoto, qualsiasi
+/// altro errore (permessi, byte non UTF-8) blocca il join invece di sovrascrivere
+/// una configurazione che non si è riusciti a leggere.
+fn read_race_base(path: &Path) -> Result<String, String> {
+    match std::fs::read_to_string(path) {
+        Ok(text) => Ok(text),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(error) => Err(messages::tr(
+            &format!("race.ini non leggibile ({}): join annullato", error),
+            &format!("race.ini cannot be read ({}): join cancelled", error),
+        )),
+    }
+}
+
+/// Copia di sicurezza di `race.ini`: se il file c'è il backup deve riuscire,
+/// altrimenti non si tocca niente.
+fn backup_race_ini(path: &Path) -> Result<(), String> {
+    match std::fs::copy(path, path.with_extension("ini.bak")) {
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(messages::tr(
+            &format!(
+                "backup di race.ini non riuscito ({}): join annullato",
+                error
+            ),
+            &format!("race.ini backup failed ({}): join cancelled", error),
+        )),
+    }
+}
+
 /// Scrive `race.ini` con la sezione `[REMOTE]` e avvia `acs.exe`: il gioco entra
 /// direttamente nel server, senza passare da Content Manager.
 #[tauri::command]
@@ -103,12 +133,19 @@ pub fn launch_game(
         .ok_or_else(|| "cartella Documenti\\Assetto Corsa non trovata".to_string())?;
     std::fs::create_dir_all(&cfg_dir).map_err(|error| error.to_string())?;
     let path = cfg_dir.join("race.ini");
-    let base = std::fs::read_to_string(&path).unwrap_or_default();
-    if path.is_file() {
-        let _ = std::fs::copy(&path, path.with_extension("ini.bak"));
-    }
+    // un file illeggibile non va mai trattato come vuoto: si sovrascriverebbe
+    let base = read_race_base(&path)?;
+    // senza backup riuscito il join non deve modificare race.ini
+    backup_race_ini(&path)?;
     let mut sections = ini::parse(&base).sections;
-    let guid = steam_id64().unwrap_or_default();
+    // senza SteamID64 la prenotazione non può combaciare: meglio fermarsi qui
+    // che avviare il gioco con un GUID vuoto che non entra nello slot
+    let guid = steam_id64().ok_or_else(|| {
+        messages::tr(
+            "Steam non rilevato: apri Steam e riprova, serve lo SteamID64 per entrare nello slot",
+            "Steam not detected: open Steam and retry, the SteamID64 is required to join the slot",
+        )
+    })?;
     set_values(
         &mut sections,
         "REMOTE",
@@ -136,7 +173,7 @@ pub fn launch_game(
             &format!("invalid value for race.ini: {}", error),
         )
     })?;
-    std::fs::write(&path, text).map_err(|error| error.to_string())?;
+    write_text_atomic(&path, &text)?;
 
     let acs = Path::new(&game_dir).join("acs.exe");
     Command::new(&acs)
@@ -144,4 +181,60 @@ pub fn launch_game(
         .spawn()
         .map_err(|error| format!("avvio del gioco non riuscito: {}", error))?;
     Ok(game_dir)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("acsc-join-{}-{}", tag, std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("cartella");
+        dir
+    }
+
+    #[test]
+    fn a_missing_race_ini_is_treated_as_empty() {
+        let dir = temp_dir("missing");
+        assert_eq!(
+            read_race_base(&dir.join("race.ini")).expect("assente va bene"),
+            ""
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_unreadable_race_ini_stops_the_join() {
+        let dir = temp_dir("unreadable");
+        let path = dir.join("race.ini");
+        let original = vec![0xFFu8, 0xFE, 0x00];
+        std::fs::write(&path, &original).expect("file");
+
+        assert!(read_race_base(&path).is_err());
+        // il file resta intatto: nessuna scrittura è avvenuta
+        assert_eq!(std::fs::read(&path).expect("letto"), original);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_backup_is_written_and_the_file_is_replaced_atomically() {
+        let dir = temp_dir("backup");
+        let path = dir.join("race.ini");
+        std::fs::write(&path, "[REMOTE]\r\nACTIVE=0\r\n").expect("file");
+
+        backup_race_ini(&path).expect("backup");
+        assert!(path.with_extension("ini.bak").exists());
+
+        write_text_atomic(&path, "nuovo").expect("scrittura");
+        assert_eq!(std::fs::read_to_string(&path).expect("letto"), "nuovo");
+
+        let temporary = std::fs::read_dir(&dir)
+            .expect("dir")
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"))
+            .count();
+        assert_eq!(temporary, 0, "nessun file temporaneo deve restare");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

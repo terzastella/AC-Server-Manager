@@ -4,6 +4,24 @@ Le modifiche importanti del progetto. Formato basato su
 [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni
 [SemVer](https://semver.org/lang/it/).
 
+## [1.0.16] - 2026-11-10
+
+### Corretto
+
+- **Launcher / `race.ini`**: un file illeggibile (permessi, byte non UTF-8) non viene più
+  trattato come vuoto e sovrascritto; il backup deve riuscire, altrimenti il join si
+  ferma; la scrittura è atomica (temporaneo, verifica, rename) come nel Manager.
+- **SteamID64 obbligatorio nel launcher**: se Steam non fornisce l'identificativo il
+  join si interrompe con un messaggio chiaro, invece di avviare il gioco con un GUID
+  vuoto che non entra nello slot.
+- **Profili**: una junction dentro `profiles/` non viene più adottata come profilo
+  quando l'indice viene ricostruito.
+
+### Test
+
+- 4 test nuovi (race.ini assente e illeggibile, backup con scrittura atomica, junction
+  non adottata come profilo): totale 98 attivi + 4 ignorati.
+
 ## [1.0.15] - 2026-11-10
 
 ### Corretto
@@ -346,6 +364,7 @@ Prima release pubblica.
 - I binari non contengono più i percorsi assoluti della macchina di compilazione:
   `build.ps1` riscrive il profilo utente in `/build` (`--remap-path-prefix`).
 
+[1.0.16]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.16
 [1.0.15]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.15
 [1.0.14]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.14
 [1.0.13]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.13

@@ -55,6 +55,20 @@ fn valid_slug(slug: &str) -> bool {
             .all(|character| character.is_ascii_alphanumeric() || character == '-')
 }
 
+/// Una voce è un link simbolico o una junction: `Path::is_dir()` la seguirebbe
+/// e una cartella esterna verrebbe adottata come profilo.
+fn is_link(file_type: &std::fs::FileType) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::FileTypeExt;
+        file_type.is_symlink_dir() || file_type.is_symlink_file()
+    }
+    #[cfg(not(windows))]
+    {
+        file_type.is_symlink()
+    }
+}
+
 /// Profili presenti sul disco ma non nell'indice (indice perso o corrotto):
 /// si ricostruiscono dalla cartella, così non spariscono dalla UI.
 fn scan_existing(root: &Path) -> Vec<ProfileEntry> {
@@ -64,7 +78,11 @@ fn scan_existing(root: &Path) -> Vec<ProfileEntry> {
     };
     let mut found: Vec<ProfileEntry> = read
         .filter_map(|entry| entry.ok())
-        .filter(|entry| entry.path().is_dir())
+        .filter(|entry| match entry.file_type() {
+            // i collegamenti non vengono adottati come profili
+            Ok(file_type) => !is_link(&file_type) && entry.path().is_dir(),
+            Err(_) => false,
+        })
         .filter_map(|entry| {
             let slug = entry.file_name().to_string_lossy().to_string();
             if !valid_slug(&slug) {
@@ -714,6 +732,32 @@ mod corrupt_index_tests {
         // la cartella del profilo e' ancora li
         assert!(root.join("profiles").join("serata").join("cfg").is_dir());
 
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_junction_is_not_adopted_as_a_profile() {
+        let root = std::env::temp_dir().join(format!("acsc-scan-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("profiles")).expect("profiles");
+        let outside = root.join("altrove");
+        std::fs::create_dir_all(outside.join("cfg")).expect("cfg fuori");
+        // una junction dentro profiles/ punta a una cartella esterna: non deve
+        // essere adottata come profilo quando l'indice viene ricostruito
+        junction::create(&outside, root.join("profiles").join("linkato")).expect("junction");
+
+        let index = load(&root);
+
+        assert!(
+            index.profiles.iter().all(|entry| entry.slug != "linkato"),
+            "una junction non deve diventare un profilo: {:?}",
+            index
+                .profiles
+                .iter()
+                .map(|entry| entry.slug.clone())
+                .collect::<Vec<_>>()
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 }

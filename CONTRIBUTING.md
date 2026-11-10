@@ -30,8 +30,9 @@ git config core.hooksPath .githooks
 ## Build and checks
 
 ```powershell
-# frontend: traduzioni, tipi, build
+# frontend: versioni, traduzioni, tipi, build
 cd app
+node scripts/check-versions.mjs
 node scripts/check-i18n.mjs
 npx tsc --noEmit
 npm run build

@@ -27,6 +27,9 @@ jobs:
       - name: Audit dependencies
         run: npm audit --audit-level=high
 
+      - name: Check versions
+        run: node scripts/check-versions.mjs
+
       - name: Check translations
         run: node scripts/check-i18n.mjs
 

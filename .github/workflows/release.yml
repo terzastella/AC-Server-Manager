@@ -35,6 +35,7 @@ jobs:
         working-directory: app
         shell: pwsh
         run: |
+          node scripts/check-versions.mjs
           node scripts/check-i18n.mjs
           npx tsc --noEmit
           npm audit --audit-level=high

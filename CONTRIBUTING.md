@@ -10,7 +10,7 @@ request.
 
 ## Development setup
 
-Requirements: Node.js 20+, stable Rust, Visual Studio Build Tools (C++), Windows 10/11.
+Requirements: Node.js 22+, stable Rust, Visual Studio Build Tools (C++), Windows 10/11.
 
 ```powershell
 cd app

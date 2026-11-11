@@ -150,7 +150,7 @@ npm install
 powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 ```
 
-Servono Node.js 20+, Rust stabile e Visual Studio Build Tools (C++).
+Servono Node.js 22+, Rust stabile e Visual Studio Build Tools (C++).
 Lo script riscrive i percorsi di build, così i binari non contengono il tuo
 profilo utente (`C:\Users\<nome>\...`).
 

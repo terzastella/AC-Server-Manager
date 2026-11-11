@@ -19,7 +19,7 @@ pub struct JoinArgs {
 pub fn new_token() -> Result<String, String> {
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
     let mut bytes = [0u8; 32];
-    getrandom::getrandom(&mut bytes).map_err(|error| {
+    getrandom::fill(&mut bytes).map_err(|error| {
         messages::tr(
             &format!("generatore casuale non disponibile: {}", error),
             &format!("random generator unavailable: {}", error),

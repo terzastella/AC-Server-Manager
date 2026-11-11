@@ -181,8 +181,28 @@ pub fn get_settings(state: State<AppState>) -> Settings {
     state.settings.lock().unwrap().clone()
 }
 
+/// Non salva mai un token d'invito vuoto: se la configurazione in arrivo non ne
+/// ha uno si tiene quello in uso, o se ne genera uno nuovo. Un token vuoto
+/// renderebbe ogni invito inutilizzabile (e l'API rifiuta comunque un token
+/// atteso vuoto).
+fn keep_or_create_token(current: &str, incoming: &mut Settings) -> Result<(), String> {
+    if !incoming.invite.token.trim().is_empty() {
+        return Ok(());
+    }
+    incoming.invite.token = if current.trim().is_empty() {
+        crate::invite::new_token()?
+    } else {
+        current.to_string()
+    };
+    Ok(())
+}
+
 #[tauri::command]
-pub fn save_settings(state: State<AppState>, settings: Settings) -> Result<(), String> {
+pub fn save_settings(state: State<AppState>, mut settings: Settings) -> Result<(), String> {
+    {
+        let current = state.settings.lock().unwrap();
+        keep_or_create_token(&current.invite.token, &mut settings)?;
+    }
     *state.settings.lock().unwrap() = settings;
     state.persist()
 }
@@ -297,5 +317,24 @@ mod stamp_tests {
             .count();
         assert_eq!(temporaries, 0, "nessun .tmp deve restare dopo l'errore");
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_empty_token_is_never_saved() {
+        // configurazione in arrivo senza token: si tiene quello in uso
+        let mut incoming = Settings::default();
+        keep_or_create_token("token-corrente", &mut incoming).expect("token mantenuto");
+        assert_eq!(incoming.invite.token, "token-corrente");
+
+        // nessun token in uso: se ne genera uno nuovo
+        let mut fresh = Settings::default();
+        keep_or_create_token("", &mut fresh).expect("token generato");
+        assert!(!fresh.invite.token.trim().is_empty());
+
+        // un token esplicito non viene toccato
+        let mut explicit = Settings::default();
+        explicit.invite.token = "scelto".into();
+        keep_or_create_token("altro", &mut explicit).expect("token esplicito");
+        assert_eq!(explicit.invite.token, "scelto");
     }
 }

@@ -4,6 +4,19 @@ Le modifiche importanti del progetto. Formato basato su
 [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni
 [SemVer](https://semver.org/lang/it/).
 
+## [1.0.19] - 2026-11-11
+
+### Corretto
+
+- **Scrittura atomica**: il nome del file temporaneo include l'istante di scrittura, così un `.tmp`
+  rimasto da un crash non blocca più il primo salvataggio quando il sistema riassegna lo stesso PID.
+- **Token d'invito**: `save_settings` non può più salvare un token vuoto; se la configurazione in
+  arrivo non ne ha uno viene tenuto quello in uso, oppure ne viene generato uno nuovo.
+
+### Test
+
+- 1 test nuovo (il token vuoto non viene mai salvato): totale 115 attivi + 4 ignorati.
+
 ## [1.0.18] - 2026-11-11
 
 ### Corretto
@@ -412,6 +425,7 @@ Prima release pubblica.
 - I binari non contengono più i percorsi assoluti della macchina di compilazione:
   `build.ps1` riscrive il profilo utente in `/build` (`--remap-path-prefix`).
 
+[1.0.19]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.19
 [1.0.18]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.18
 [1.0.17]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.17
 [1.0.16]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.16

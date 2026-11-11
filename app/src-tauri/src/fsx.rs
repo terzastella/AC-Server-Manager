@@ -36,9 +36,21 @@ pub(crate) fn write_text_atomic(path: &Path, text: &str) -> Result<(), String> {
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("cfg");
-    // nome univoco per singola scrittura: due salvataggi non si pestano
+    // nome univoco per singola scrittura: processo, istante e contatore. Il
+    // suffisso temporale evita che un `.tmp` rimasto da un crash blocchi il
+    // salvataggio se il sistema riassegna lo stesso PID.
     let seq = WRITE_SEQ.fetch_add(1, Ordering::Relaxed);
-    let temp = path.with_file_name(format!("{}.{}.{}.tmp", file_name, std::process::id(), seq));
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_nanos())
+        .unwrap_or(0);
+    let temp = path.with_file_name(format!(
+        "{}.{}.{}.{}.tmp",
+        file_name,
+        std::process::id(),
+        nanos,
+        seq
+    ));
     if let Err(error) = write_and_verify(&temp, text) {
         let _ = fs::remove_file(&temp);
         return Err(error);

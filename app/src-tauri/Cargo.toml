@@ -26,7 +26,7 @@ getrandom = "0.2"
 subtle = "2"
 
 [target.'cfg(windows)'.dependencies]
-junction = "1"
+junction = "2"
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Threading"] }
 
 [profile.release]

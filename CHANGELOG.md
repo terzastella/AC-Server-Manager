@@ -4,6 +4,23 @@ Le modifiche importanti del progetto. Formato basato su
 [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni
 [SemVer](https://semver.org/lang/it/).
 
+## [1.0.20] - 2026-11-11
+
+### Aggiornato
+
+- **GitHub Actions**: `actions/checkout` 7.0.1, `actions/setup-node` 7.1.0,
+  `softprops/action-gh-release` 3.0.4 (SHA dei commit ripinnati nei workflow).
+- **Dipendenze Rust**: `base64` 0.23, `getrandom` 0.4 (API `getrandom::fill`), `windows-sys` 0.61,
+  `if-addrs` 0.15, `junction` 2.1.
+- **Frontend**: `vite` 8.3, `@vitejs/plugin-react` 6.2, `typescript` 7.0; aggiunto `src/vite-env.d.ts`
+  (TypeScript 7 richiede le dichiarazioni per gli import CSS).
+- **CI e release** su Node 22 (richiesto da Vite 8).
+
+### Manutenzione
+
+- Rimosso `.github/dependabot.yml`: gli aggiornamenti delle dipendenze vengono fatti a mano, con test
+  e build in locale, per non avere commit di bot nella storia. Gli alert di sicurezza restano attivi.
+
 ## [1.0.19] - 2026-11-11
 
 ### Corretto
@@ -425,6 +442,7 @@ Prima release pubblica.
 - I binari non contengono più i percorsi assoluti della macchina di compilazione:
   `build.ps1` riscrive il profilo utente in `/build` (`--remap-path-prefix`).
 
+[1.0.20]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.20
 [1.0.19]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.19
 [1.0.18]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.18
 [1.0.17]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.17

@@ -1,9 +1,20 @@
 name: Release
 
+# Due modi per pubblicare:
+#  - push di un tag `v*` (comportamento normale);
+#  - avvio manuale da Actions, indicando il tag: serve quando il trigger da tag
+#    non parte, e mostra subito il log di eventuali errori.
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag da pubblicare (es. v1.0.19)"
+        required: true
+        default: "v1.0.19"
+        type: string
 
 permissions:
   contents: write
@@ -14,6 +25,16 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Ref in uscita
+        shell: pwsh
+        run: |
+          Write-Host "tag: ${{ inputs.tag || github.ref_name }}"
+          Write-Host "commit: $(git rev-parse HEAD)"
+          git describe --tags --exact-match
+          if ($LASTEXITCODE -ne 0) { Write-Host "nessun tag esatto (normale con checkout del solo tag)" }
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -69,7 +90,7 @@ jobs:
       - name: Build release body
         shell: pwsh
         run: |
-          $notesPath = "docs/release-notes/${{ github.ref_name }}.md"
+          $notesPath = "docs/release-notes/${{ inputs.tag || github.ref_name }}.md"
           if (-not (Test-Path $notesPath)) { throw "note della release non trovate: $notesPath" }
           $notes = [System.IO.File]::ReadAllText($notesPath, [System.Text.Encoding]::UTF8)
           $sums = [System.IO.File]::ReadAllText("dist/SHA256SUMS.txt", [System.Text.Encoding]::ASCII).Trim()
@@ -79,12 +100,20 @@ jobs:
           Get-Content dist/release-body.md -TotalCount 6
 
       - name: Upload to the release
+        id: release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
           body_path: dist/release-body.md
           files: |
             dist/ACServerControl.exe
             dist/ACLauncher.exe
             dist/SHA256SUMS.txt
           fail_on_unmatched_files: true
-          prerelease: ${{ contains(github.ref_name, '-rc') }}
+          prerelease: ${{ contains(inputs.tag || github.ref_name, '-rc') }}
+
+      - name: Release pubblicata
+        shell: pwsh
+        run: |
+          Write-Host "release: ${{ steps.release.outputs.url }}"
+          Write-Host "asset: ${{ steps.release.outputs.assets }}"

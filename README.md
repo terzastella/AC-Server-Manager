@@ -17,8 +17,10 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/terzastella/AC-Server-Manager/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/terzastella/AC-Server-Manager/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/terzastella/AC-Server-Manager/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/terzastella/AC-Server-Manager?style=flat-square"></a>
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6?style=flat-square">
-  <img alt="License" src="https://img.shields.io/badge/license-MIT-97ca00?style=flat-square">
+  <a href="https://github.com/terzastella/AC-Server-Manager/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/terzastella/AC-Server-Manager?style=flat-square"></a>
   <img alt="Language" src="https://img.shields.io/badge/i18n-IT%20%7C%20EN-ff5a1f?style=flat-square">
 </p>
 

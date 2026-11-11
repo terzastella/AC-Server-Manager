@@ -22,7 +22,7 @@ if-addrs = "0.13"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "bmp"] }
 base64 = "0.22"
-getrandom = "0.2"
+getrandom = "0.4"
 subtle = "2"
 
 [target.'cfg(windows)'.dependencies]

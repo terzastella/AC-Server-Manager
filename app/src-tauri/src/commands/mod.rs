@@ -26,8 +26,6 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 /// Lock condiviso da chiunque modifichi `entry_list.ini`: prenotazioni HTTP,
 /// salvataggio manuale degli slot, caricamento dei preset.
 static ENTRY_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-/// Contatore per nomi di file temporanei univoci per singola scrittura.
-static WRITE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 pub(crate) fn entry_lock() -> &'static Mutex<()> {
     ENTRY_LOCK.get_or_init(|| Mutex::new(()))
@@ -54,11 +52,10 @@ pub(crate) fn read_text(path: &Path) -> Result<String, String> {
     fs::read_to_string(path).map_err(|error| format!("{}: {}", path.display(), error))
 }
 
+/// Scrittura di un file di configurazione: passa dalla scrittura atomica
+/// condivisa, così un errore non lascia mai il file a metà.
 pub(crate) fn write_text(path: &Path, text: &str) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-    fs::write(path, text).map_err(|error| format!("{}: {}", path.display(), error))
+    write_text_atomic(path, text)
 }
 
 /// Come `read_text`, ma un file assente vale come vuoto: serve a creare un
@@ -72,43 +69,8 @@ pub(crate) fn read_text_or_empty(path: &Path) -> Result<String, String> {
     }
 }
 
-/// Scrittura atomica: file temporaneo, rilettura di controllo, poi rename.
-/// Se qualcosa fallisce il file originale resta intatto e il temporaneo viene
-/// rimosso: nessun `.tmp` orfano in giro.
-pub(crate) fn write_text_atomic(path: &Path, text: &str) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-    let file_name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("cfg");
-    // nome univoco per singola scrittura: due salvataggi non si pestano
-    let seq = WRITE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let temp = path.with_file_name(format!("{}.{}.{}.tmp", file_name, std::process::id(), seq));
-    if let Err(error) = write_and_verify(&temp, text) {
-        let _ = fs::remove_file(&temp);
-        return Err(error);
-    }
-    fs::rename(&temp, path).map_err(|error| {
-        let _ = fs::remove_file(&temp);
-        format!("{}: {}", path.display(), error)
-    })
-}
-
-/// Scrive il temporaneo e rilegge il contenuto prima del rename.
-fn write_and_verify(temp: &Path, text: &str) -> Result<(), String> {
-    fs::write(temp, text).map_err(|error| format!("{}: {}", temp.display(), error))?;
-    let written =
-        fs::read_to_string(temp).map_err(|error| format!("{}: {}", temp.display(), error))?;
-    if written != text {
-        return Err(messages::tr(
-            "scrittura incompleta: il file originale non è stato modificato",
-            "incomplete write: the original file was left untouched",
-        ));
-    }
-    Ok(())
-}
+/// Scrittura atomica condivisa con profili e launcher: vedi [`crate::fsx`].
+pub(crate) use crate::fsx::write_text_atomic;
 
 pub(crate) fn config_sections(state: &AppState) -> Vec<ini::Section> {
     let path = state.cfg_dir().join("server_cfg.ini");

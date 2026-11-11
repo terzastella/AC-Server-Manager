@@ -2,6 +2,7 @@
 //! (con `cfg/` propria e un junction `content` verso la radice condivisa).
 //! Il profilo `default` è la cartella `cfg/` della radice: nessuna copia.
 
+use crate::fsx::{is_link, write_text_atomic};
 use crate::messages;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -55,39 +56,64 @@ fn valid_slug(slug: &str) -> bool {
             .all(|character| character.is_ascii_alphanumeric() || character == '-')
 }
 
-/// Una voce è un link simbolico o una junction: `Path::is_dir()` la seguirebbe
-/// e una cartella esterna verrebbe adottata come profilo.
-fn is_link(file_type: &std::fs::FileType) -> bool {
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::FileTypeExt;
-        file_type.is_symlink_dir() || file_type.is_symlink_file()
-    }
-    #[cfg(not(windows))]
-    {
-        file_type.is_symlink()
-    }
+/// Esito del controllo di un percorso: fail-closed, solo una cartella reale è
+/// considerata valida, tutto il resto è un rifiuto o un'assenza.
+enum DirState {
+    Real,
+    LinkOrOther,
+    Missing,
+    Unreadable,
 }
 
-/// Cartella reale: una junction o un link simbolico non conta, `Path::is_dir()`
-/// li seguirebbe.
-fn is_real_dir(path: &Path) -> bool {
+fn probe_dir(path: &Path) -> DirState {
     match std::fs::symlink_metadata(path) {
-        Ok(metadata) => metadata.file_type().is_dir() && !is_link(&metadata.file_type()),
-        Err(_) => false,
+        Ok(metadata) => {
+            let file_type = metadata.file_type();
+            if is_link(&file_type) || !file_type.is_dir() {
+                DirState::LinkOrOther
+            } else {
+                DirState::Real
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => DirState::Missing,
+        Err(_) => DirState::Unreadable,
     }
 }
 
-/// Profilo utilizzabile: la cartella è reale e, quando esiste, lo è anche
-/// `cfg/`; `content/` può essere una junction (è il contenuto condiviso).
-fn is_usable_profile_dir(path: &Path) -> bool {
-    if !is_real_dir(path) {
+/// `content` può essere una junction, ma solo verso `<root>\content`: un
+/// collegamento verso un'altra cartella porterebbe contenuti arbitrari.
+fn content_is_trusted(path: &Path, shared: &Path) -> bool {
+    match std::fs::symlink_metadata(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
+        Err(_) => false,
+        Ok(metadata) => {
+            let file_type = metadata.file_type();
+            if !is_link(&file_type) {
+                return file_type.is_dir();
+            }
+            match (std::fs::canonicalize(path), std::fs::canonicalize(shared)) {
+                (Ok(actual), Ok(expected)) => actual == expected,
+                _ => false,
+            }
+        }
+    }
+}
+
+/// Profilo adottabile: cartella reale, `cfg` reale quando esiste, `content`
+/// assente o attendibile. Permessi negati o errori sconosciuti rifiutano:
+/// meglio un profilo in meno che uno che punta altrove.
+fn profile_dir_is_trusted(path: &Path, shared: &Path) -> bool {
+    if !matches!(probe_dir(path), DirState::Real) {
         return false;
     }
-    match std::fs::symlink_metadata(path.join("cfg")) {
-        Ok(_) => is_real_dir(&path.join("cfg")),
-        // profilo senza cfg: le operazioni che lo usano creano la cartella
-        Err(_) => true,
+    let content_path = path.join("content");
+    let content_ok = content_is_trusted(&content_path, shared);
+    match probe_dir(&path.join("cfg")) {
+        DirState::Real => content_ok,
+        // senza `cfg` il profilo deve almeno avere un `content`: altrimenti non
+        // c'è nulla da gestire e non va adottato
+        DirState::Missing => content_ok && std::fs::symlink_metadata(&content_path).is_ok(),
+        DirState::LinkOrOther | DirState::Unreadable => false,
     }
 }
 
@@ -111,9 +137,8 @@ fn scan_existing(root: &Path) -> Vec<ProfileEntry> {
                 return None;
             }
             let path = entry.path();
-            // `cfg` deve essere una cartella vera: una junction dentro un profilo
-            // porterebbe altrove le configurazioni
-            if !is_real_dir(&path.join("cfg")) && !path.join("content").exists() {
+            // cartella e `cfg` reali, `content` solo verso la cartella condivisa
+            if !profile_dir_is_trusted(&path, &root.join("content")) {
                 return None;
             }
             Some(ProfileEntry {
@@ -141,7 +166,10 @@ pub fn load(root: &Path) -> ProfileIndex {
                 index.profiles.retain(|entry| {
                     let usable = entry.legacy
                         || (valid_slug(&entry.slug)
-                            && is_usable_profile_dir(&profile_dir(root, entry)));
+                            && profile_dir_is_trusted(
+                                &profile_dir(root, entry),
+                                &root.join("content"),
+                            ));
                     usable && seen.insert(entry.id.clone())
                 });
                 if !index.profiles.iter().any(|entry| entry.legacy) {
@@ -190,10 +218,10 @@ pub fn save(root: &Path, index: &ProfileIndex) -> Result<(), String> {
     let dir = root.join("profiles");
     std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
     let path = index_path(root);
-    let temp = path.with_file_name(format!("index.{}.tmp", std::process::id()));
     let text = serde_json::to_string_pretty(index).map_err(|error| error.to_string())?;
-    std::fs::write(&temp, text).map_err(|error| error.to_string())?;
-    std::fs::rename(&temp, &path).map_err(|error| error.to_string())
+    // stessa scrittura atomica di configurazioni e race.ini: mai un indice
+    // mezzo scritto se qualcosa va storto
+    write_text_atomic(&path, &text)
 }
 
 pub fn slugify(name: &str) -> String {
@@ -838,6 +866,108 @@ mod corrupt_index_tests {
             index.profiles.iter().all(|entry| entry.slug != "serata"),
             "un profilo con cfg junction non deve restare"
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Cartella temporanea con `profiles/` e la cartella condivisa `content/`.
+    fn profile_root(tag: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!("acsc-{}-{}", tag, std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("profiles")).expect("profiles");
+        std::fs::create_dir_all(root.join("content").join("cars")).expect("content");
+        root
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_cfg_junction_is_not_adopted_when_the_index_is_missing() {
+        let root = profile_root("cfg-junction-scan");
+        let outside = root.join("altrove");
+        std::fs::create_dir_all(&outside).expect("fuori");
+        let profile = root.join("profiles").join("serata");
+        std::fs::create_dir_all(&profile).expect("profilo");
+        junction::create(&outside, profile.join("cfg")).expect("junction");
+
+        let index = load(&root);
+
+        assert!(index.profiles.iter().all(|entry| entry.slug != "serata"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_cfg_junction_is_not_adopted_with_a_corrupt_index() {
+        let root = profile_root("cfg-junction-corrupt");
+        let outside = root.join("altrove");
+        std::fs::create_dir_all(&outside).expect("fuori");
+        let profile = root.join("profiles").join("serata");
+        std::fs::create_dir_all(&profile).expect("profilo");
+        junction::create(&outside, profile.join("cfg")).expect("junction");
+        std::fs::write(root.join("profiles").join("index.json"), "{ rotto").expect("indice");
+
+        let index = load(&root);
+
+        assert!(index.profiles.iter().all(|entry| entry.slug != "serata"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_content_junction_to_the_shared_folder_is_accepted() {
+        let root = profile_root("content-shared");
+        let profile = root.join("profiles").join("serata");
+        std::fs::create_dir_all(profile.join("cfg")).expect("cfg");
+        junction::create(root.join("content"), profile.join("content")).expect("junction");
+
+        let index = load(&root);
+
+        assert!(
+            index.profiles.iter().any(|entry| entry.slug == "serata"),
+            "una junction content verso la cartella condivisa è la struttura prevista"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_content_junction_to_an_external_folder_is_rejected() {
+        let root = profile_root("content-external");
+        let outside = root.join("altrove");
+        std::fs::create_dir_all(&outside).expect("fuori");
+        let profile = root.join("profiles").join("serata");
+        std::fs::create_dir_all(profile.join("cfg")).expect("cfg");
+        junction::create(&outside, profile.join("content")).expect("junction");
+
+        let index = load(&root);
+
+        assert!(
+            index.profiles.iter().all(|entry| entry.slug != "serata"),
+            "content verso una cartella esterna non deve essere adottato"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_cfg_that_is_a_file_is_rejected() {
+        let root = profile_root("cfg-file");
+        let profile = root.join("profiles").join("serata");
+        std::fs::create_dir_all(&profile).expect("profilo");
+        std::fs::write(profile.join("cfg"), "non sono una cartella").expect("file");
+
+        let index = load(&root);
+
+        assert!(index.profiles.iter().all(|entry| entry.slug != "serata"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_empty_profile_folder_is_not_adopted() {
+        let root = profile_root("empty");
+        std::fs::create_dir_all(root.join("profiles").join("vuoto")).expect("cartella");
+
+        let index = load(&root);
+
+        assert!(index.profiles.iter().all(|entry| entry.slug != "vuoto"));
         let _ = std::fs::remove_dir_all(&root);
     }
 }

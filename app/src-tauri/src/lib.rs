@@ -2,6 +2,7 @@ mod api;
 mod assists;
 mod cm;
 mod commands;
+mod fsx;
 mod ini;
 mod invite;
 mod messages;

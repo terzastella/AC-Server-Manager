@@ -189,14 +189,35 @@ pub fn save(path: &Path, values: &Assists) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
-    let base = fs::read_to_string(path).unwrap_or_default();
+    // un file illeggibile non è un file vuoto: sovrascriverlo perderebbe la
+    // configurazione che non si è riusciti a leggere
+    let base = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => {
+            return Err(crate::messages::tr(
+                &format!(
+                    "assists.ini non leggibile ({}): salvataggio annullato",
+                    error
+                ),
+                &format!("assists.ini cannot be read ({}): save cancelled", error),
+            ))
+        }
+    };
+    // il backup deve riuscire, altrimenti non si tocca l'originale
     if path.is_file() {
-        let _ = fs::copy(path, path.with_file_name("assists.ini.bak"));
+        fs::copy(path, path.with_file_name("assists.ini.bak")).map_err(|error| {
+            crate::messages::tr(
+                &format!(
+                    "backup di assists.ini non riuscito ({}): salvataggio annullato",
+                    error
+                ),
+                &format!("assists.ini backup failed ({}): save cancelled", error),
+            )
+        })?;
     }
     let text = apply_values(&base, values)?;
-    let temp = path.with_file_name("assists.ini.tmp");
-    fs::write(&temp, text).map_err(|error| error.to_string())?;
-    fs::rename(&temp, path).map_err(|error| error.to_string())
+    crate::fsx::write_text_atomic(path, &text)
 }
 
 #[cfg(test)]
@@ -271,6 +292,29 @@ mod tests {
         assert!(path.with_file_name("assists.ini.bak").is_file());
         assert!(fs::read_to_string(&path).unwrap().contains("DAMAGE=100"));
         assert_eq!(read_values(&fs::read_to_string(&path).unwrap()), values);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn save_refuses_an_unreadable_file_and_leaves_it_intact() {
+        let dir =
+            std::env::temp_dir().join(format!("acsc-assists-unreadable-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("cartella");
+        let path = dir.join("assists.ini");
+        let original = vec![0xFFu8, 0x00, 0xFE];
+        fs::write(&path, &original).expect("file");
+        let values = read_values(SAMPLE);
+
+        assert!(save(&path, &values).is_err());
+        // il file illeggibile non viene trattato come vuoto né sovrascritto
+        assert_eq!(fs::read(&path).expect("letto"), original);
+        let temporaries = fs::read_dir(&dir)
+            .expect("dir")
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"))
+            .count();
+        assert_eq!(temporaries, 0, "nessun temporaneo deve restare");
         let _ = fs::remove_dir_all(&dir);
     }
 }

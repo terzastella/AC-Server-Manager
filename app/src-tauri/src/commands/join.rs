@@ -91,20 +91,98 @@ fn read_race_base(path: &Path) -> Result<String, String> {
     }
 }
 
-/// Copia di sicurezza di `race.ini`: se il file c'è il backup deve riuscire,
-/// altrimenti non si tocca niente.
-fn backup_race_ini(path: &Path) -> Result<(), String> {
-    match std::fs::copy(path, path.with_extension("ini.bak")) {
-        Ok(_) => Ok(()),
+/// Copie di `race.ini` conservate: quelle più vecchie vengono rimosse.
+const RACE_BACKUPS: usize = 10;
+
+/// `race.ini` deve essere un file regolare: un link o un reparse point
+/// porterebbe la scrittura fuori dalla cartella del gioco.
+fn ensure_regular_file(path: &Path) -> Result<(), String> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            let file_type = metadata.file_type();
+            if crate::fsx::is_link(&file_type) || !file_type.is_file() {
+                return Err(messages::tr(
+                    "race.ini non è un file regolare (link o reparse point): join annullato",
+                    "race.ini is not a regular file (link or reparse point): join cancelled",
+                ));
+            }
+            Ok(())
+        }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(messages::tr(
-            &format!(
-                "backup di race.ini non riuscito ({}): join annullato",
-                error
-            ),
-            &format!("race.ini backup failed ({}): join cancelled", error),
+            &format!("race.ini non verificabile ({}): join annullato", error),
+            &format!("race.ini cannot be checked ({}): join cancelled", error),
         )),
     }
+}
+
+/// Tiene solo le copie più recenti, così la cartella non cresce a ogni join.
+fn prune_race_backups(dir: &Path) {
+    let Ok(read) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut backups: Vec<PathBuf> = read
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .map(|name| name.starts_with("race.ini.") && name.ends_with(".bak"))
+                .unwrap_or(false)
+        })
+        .collect();
+    if backups.len() <= RACE_BACKUPS {
+        return;
+    }
+    // il nome contiene la data: l'ordine alfabetico è quello cronologico
+    backups.sort();
+    let excess = backups.len() - RACE_BACKUPS;
+    for old in backups.into_iter().take(excess) {
+        let _ = std::fs::remove_file(old);
+    }
+}
+
+/// Copia di sicurezza di `race.ini` con nome datato: ogni join conserva lo
+/// stato precedente, senza sovrascrivere le copie già presenti.
+fn backup_race_ini(path: &Path) -> Result<(), String> {
+    ensure_regular_file(path)?;
+    match std::fs::metadata(path) {
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(messages::tr(
+                &format!("race.ini non leggibile ({}): join annullato", error),
+                &format!("race.ini cannot be read ({}): join cancelled", error),
+            ))
+        }
+    }
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S-%3f");
+    let destination = parent.join(format!("race.ini.{}.bak", stamp));
+    let copied = std::fs::copy(path, &destination)
+        .map_err(|error| {
+            messages::tr(
+                &format!(
+                    "backup di race.ini non riuscito ({}): join annullato",
+                    error
+                ),
+                &format!("race.ini backup failed ({}): join cancelled", error),
+            )
+        })
+        .and_then(|written| {
+            let expected = std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0);
+            if written != expected {
+                return Err(messages::tr(
+                    "copia di sicurezza incompleta: join annullato",
+                    "incomplete backup: join cancelled",
+                ));
+            }
+            Ok(())
+        });
+    if copied.is_ok() {
+        prune_race_backups(parent);
+    }
+    copied
 }
 
 /// Scrive `race.ini` con la sezione `[REMOTE]` e avvia `acs.exe`: il gioco entra
@@ -145,6 +223,8 @@ pub fn launch_game(
         .ok_or_else(|| "cartella Documenti\\Assetto Corsa non trovata".to_string())?;
     std::fs::create_dir_all(&cfg_dir).map_err(|error| error.to_string())?;
     let path = cfg_dir.join("race.ini");
+    // un link o un reparse point porterebbe la scrittura altrove
+    ensure_regular_file(&path)?;
     // un file illeggibile non va mai trattato come vuoto: si sovrascriverebbe
     let base = read_race_base(&path)?;
     let mut sections = ini::parse(&base).sections;
@@ -208,6 +288,53 @@ mod tests {
         dir
     }
 
+    fn list_backups(dir: &Path) -> Vec<PathBuf> {
+        std::fs::read_dir(dir)
+            .expect("dir")
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .map(|name| name.starts_with("race.ini.") && name.ends_with(".bak"))
+                    .unwrap_or(false)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn old_backups_are_pruned() {
+        let dir = temp_dir("prune");
+        let path = dir.join("race.ini");
+        std::fs::write(&path, "[REMOTE]\r\n").expect("file");
+        for _ in 0..RACE_BACKUPS + 5 {
+            backup_race_ini(&path).expect("backup");
+        }
+        let backups = list_backups(&dir);
+        assert!(
+            backups.len() <= RACE_BACKUPS,
+            "restano {} copie, attese al massimo {}",
+            backups.len(),
+            RACE_BACKUPS
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_race_ini_that_is_a_reparse_point_is_refused() {
+        let dir = temp_dir("link");
+        let target = dir.join("altrove");
+        std::fs::create_dir_all(&target).expect("cartella");
+        let path = dir.join("race.ini");
+        junction::create(&target, &path).expect("junction");
+
+        assert!(ensure_regular_file(&path).is_err());
+        assert!(backup_race_ini(&path).is_err());
+        let _ = std::fs::remove_dir(&path);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn a_missing_race_ini_is_treated_as_empty() {
         let dir = temp_dir("missing");
@@ -238,7 +365,13 @@ mod tests {
         std::fs::write(&path, "[REMOTE]\r\nACTIVE=0\r\n").expect("file");
 
         backup_race_ini(&path).expect("backup");
-        assert!(path.with_extension("ini.bak").exists());
+        let backups = list_backups(&dir);
+        assert_eq!(backups.len(), 1, "una copia datata: {:?}", backups);
+        assert!(backups[0]
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(|name| name.starts_with("race.ini.") && name.ends_with(".bak"))
+            .unwrap_or(false));
 
         write_text_atomic(&path, "nuovo").expect("scrittura");
         assert_eq!(std::fs::read_to_string(&path).expect("letto"), "nuovo");

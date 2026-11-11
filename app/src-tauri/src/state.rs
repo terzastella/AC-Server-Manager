@@ -5,17 +5,13 @@ use std::{
     io::ErrorKind,
     path::{Path, PathBuf},
     process::Child,
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Mutex, OnceLock,
-    },
+    sync::{Mutex, OnceLock},
     time::Instant,
 };
 
 /// Serializza le scritture di `settings.json`: due salvataggi ravvicinati non
 /// devono condividere il file temporaneo.
 static PERSIST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-static PERSIST_SEQ: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
@@ -43,7 +39,9 @@ impl Default for InviteSettings {
     fn default() -> Self {
         Self {
             name: "AC Server".into(),
-            token: crate::invite::new_token().unwrap_or_default(),
+            // vuoto qui: il token lo genera `load_settings`, unico punto in cui
+            // un errore del CSPRNG può essere gestito e mostrato
+            token: String::new(),
             accent: "#ff5a1f".into(),
             banner: String::new(),
             api_port: 8082,
@@ -175,22 +173,8 @@ impl AppState {
 
         let text = serde_json::to_string_pretty(&merged)
             .map_err(|error| format!("settings.json non serializzabile: {}", error))?;
-        let seq = PERSIST_SEQ.fetch_add(1, Ordering::Relaxed);
-        let temp = path.with_file_name(format!("settings.{}.{}.tmp", std::process::id(), seq));
-        fs::write(&temp, &text).map_err(|error| format!("{}: {}", temp.display(), error))?;
-        let written =
-            fs::read_to_string(&temp).map_err(|error| format!("{}: {}", temp.display(), error))?;
-        if written != text {
-            let _ = fs::remove_file(&temp);
-            return Err(crate::messages::tr(
-                "scrittura incompleta: impostazioni non salvate",
-                "incomplete write: settings not saved",
-            ));
-        }
-        fs::rename(&temp, &path).map_err(|error| {
-            let _ = fs::remove_file(&temp);
-            format!("{}: {}", path.display(), error)
-        })
+        // stessa scrittura atomica di configurazioni, profili e race.ini
+        crate::fsx::write_text_atomic(&path, &text)
     }
 }
 
@@ -268,6 +252,10 @@ mod settings_lock {
     use std::fs;
     use std::io::ErrorKind;
     use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    /// Contatore per i nomi univoci del lock su filesystem senza mutex nativi.
+    static PERSIST_SEQ: AtomicU64 = AtomicU64::new(0);
 
     pub struct SettingsLock {
         path: PathBuf,
@@ -344,22 +332,12 @@ pub fn settings_path(exe: &Path) -> PathBuf {
 
 pub fn load_settings(exe: &Path) -> Settings {
     let path = settings_path(exe);
-    match fs::read_to_string(&path) {
+    let mut settings = match fs::read_to_string(&path) {
         Ok(text) => {
             // alcuni editor salvano con BOM: senza toglierlo il parsing fallisce
             let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
             match serde_json::from_str::<Settings>(text) {
-                Ok(mut settings) => {
-                    // un token vuoto (CSPRNG fallito al primo avvio) renderebbe
-                    // inutilizzabile ogni invito: si riprova qui
-                    if settings.invite.token.trim().is_empty() {
-                        match crate::invite::new_token() {
-                            Ok(token) => settings.invite.token = token,
-                            Err(error) => eprintln!("token d'invito non generato: {}", error),
-                        }
-                    }
-                    settings
-                }
+                Ok(settings) => settings,
                 Err(error) => {
                     // il file resta recuperabile: non si sovrascrive al primo salvataggio
                     let backup = path.with_extension(format!(
@@ -382,7 +360,18 @@ pub fn load_settings(exe: &Path) -> Settings {
             }
             Settings::default()
         }
+    };
+    // Unico punto in cui si genera il token: nessun ripiego silenzioso dentro
+    // `Default`, che altrimenti produrrebbe impostazioni apparentemente valide
+    // con un token vuoto. Se il CSPRNG non è disponibile resta vuoto e la UI
+    // avvisa; l'API rifiuta comunque un token atteso vuoto.
+    if settings.invite.token.trim().is_empty() {
+        match crate::invite::new_token() {
+            Ok(token) => settings.invite.token = token,
+            Err(error) => eprintln!("token d'invito non generato: {}", error),
+        }
     }
+    settings
 }
 
 /// Profili del server: indice in `<root>\profiles\index.json`, con il profilo

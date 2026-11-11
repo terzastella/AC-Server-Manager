@@ -4,6 +4,33 @@ Le modifiche importanti del progetto. Formato basato su
 [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni
 [SemVer](https://semver.org/lang/it/).
 
+## [1.0.18] - 2026-11-11
+
+### Corretto
+
+- **Profili, controllo fail-closed**: un profilo viene adottato solo se la cartella è reale, `cfg/` è
+  una cartella reale (quando esiste) e `content/` è assente, una cartella reale o una junction verso
+  la cartella condivisa `<root>/content`. Un `cfg/` che è junction non passa più anche quando
+  `content` esiste; permessi negati o errori di `symlink_metadata` rifiutano invece di valere come
+  "va bene". Vale sia per la ricostruzione dell'indice sia per i profili già elencati.
+- **Backup delle configurazioni**: `backup_cfg` controlla tutti i file prima di copiarne uno, rifiuta
+  link e reparse point e rimuove la cartella di backup se una copia non riesce (mai un backup a metà).
+- **`assists.ini`**: un file illeggibile non viene più trattato come vuoto (prima
+  `unwrap_or_default` ne perdeva il contenuto al salvataggio), il backup è obbligatorio e la scrittura
+  è atomica.
+- **`race.ini`**: rifiutato se è un link o un reparse point; le copie di sicurezza hanno un nome datato
+  (non più `race.ini.bak` sovrascritto a ogni join) e le più vecchie oltre 10 vengono rimosse.
+- **Scrittura atomica unica**: `server_cfg.ini`, `entry_list.ini`, `welcome.txt`, `race.ini`,
+  `assists.ini`, `settings.json` e `profiles/index.json` passano dalla stessa funzione: temporaneo
+  creato in esclusiva, `sync_all`, rilettura di controllo, rename, rimozione del temporaneo su errore.
+- **Token d'invito**: la generazione avviene in un solo punto (`load_settings`); `Default` non tenta
+  più il CSPRNG con un ripiego silenzioso.
+
+### Test
+
+- 11 test nuovi (junction su `cfg`/`content`, profilo vuoto, sorgenti link nel backup, copie `race.ini`
+  potate, `assists.ini` illeggibile): totale 114 attivi + 4 ignorati.
+
 ## [1.0.17] - 2026-11-10
 
 ### Corretto
@@ -385,6 +412,7 @@ Prima release pubblica.
 - I binari non contengono più i percorsi assoluti della macchina di compilazione:
   `build.ps1` riscrive il profilo utente in `/build` (`--remap-path-prefix`).
 
+[1.0.18]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.18
 [1.0.17]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.17
 [1.0.16]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.16
 [1.0.15]: https://github.com/terzastella/AC-Server-Manager/releases/tag/v1.0.15

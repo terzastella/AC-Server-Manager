@@ -472,6 +472,49 @@ pub fn tail_log(state: State<AppState>, file: String, lines: usize) -> Result<St
 
 // ---------------------------------------------------------------- config
 
+/// File di configurazione che finiscono nel backup del profilo attivo.
+const CFG_FILES: [&str; 3] = ["server_cfg.ini", "entry_list.ini", "welcome.txt"];
+
+/// Copia i file di configurazione in una cartella di backup nuova. Rifiuta le
+/// sorgenti che non sono file regolari (link o reparse point) e, se una copia
+/// fallisce, elimina la cartella: mai un backup a metà.
+fn copy_cfg_files(source: &Path, destination: &Path) -> Result<(), String> {
+    // prima si controlla tutto, poi si scrive
+    let mut present = Vec::new();
+    for name in CFG_FILES {
+        let from = source.join(name);
+        match fs::symlink_metadata(&from) {
+            Ok(metadata) => {
+                let file_type = metadata.file_type();
+                if crate::fsx::is_link(&file_type) || !file_type.is_file() {
+                    return Err(messages::tr(
+                        &format!("{} non è un file regolare: backup annullato", name),
+                        &format!("{} is not a regular file: backup cancelled", name),
+                    ));
+                }
+                present.push((name, from));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("{}: {}", from.display(), error)),
+        }
+    }
+    for (name, from) in present {
+        let to = destination.join(name);
+        let copied = fs::copy(&from, &to).and_then(|written| {
+            let expected = fs::metadata(&from)?.len();
+            if written != expected {
+                return Err(std::io::Error::other("copia incompleta"));
+            }
+            Ok(())
+        });
+        if let Err(error) = copied {
+            let _ = fs::remove_dir_all(destination);
+            return Err(format!("{}: {}", to.display(), error));
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn backup_cfg(state: &AppState) -> Result<String, String> {
     let dir = state.server_dir();
     let profile = state.active_profile();
@@ -497,12 +540,9 @@ pub(crate) fn backup_cfg(state: &AppState) -> Result<String, String> {
         }
     }
     let source = state.cfg_dir();
-    for name in ["server_cfg.ini", "entry_list.ini", "welcome.txt"] {
-        let from = source.join(name);
-        if from.is_file() {
-            fs::copy(&from, destination.join(name)).map_err(|error| error.to_string())?;
-        }
-    }
+    // i file vengono controllati e copiati insieme: se uno non è regolare o una
+    // copia non riesce la cartella di backup viene rimossa
+    copy_cfg_files(&source, &destination)?;
     Ok(destination.to_string_lossy().to_string())
 }
 
@@ -525,5 +565,58 @@ mod tests {
         assert!(!is_acserver_exe(r"C:\AC\server\acServer.exe.bak"));
         assert!(!is_acserver_exe("acServer.exe"));
         assert!(!is_acserver_exe(""));
+    }
+
+    fn temp_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("acsc-backup-{}-{}", tag, std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("cartella");
+        dir
+    }
+
+    #[test]
+    fn backup_copies_the_regular_files_only() {
+        let base = temp_dir("regular");
+        let source = base.join("cfg");
+        fs::create_dir_all(&source).expect("cfg");
+        fs::write(source.join("server_cfg.ini"), "[SERVER]\nNAME=x\n").expect("cfg");
+        fs::write(source.join("entry_list.ini"), "[CAR_0]\n").expect("entry");
+        let destination = base.join("backup");
+        fs::create_dir_all(&destination).expect("backup");
+
+        copy_cfg_files(&source, &destination).expect("copia");
+
+        assert_eq!(
+            fs::read_to_string(destination.join("server_cfg.ini")).expect("letto"),
+            "[SERVER]\nNAME=x\n"
+        );
+        assert!(destination.join("entry_list.ini").is_file());
+        // welcome.txt non esiste nella sorgente: non deve comparire nel backup
+        assert!(!destination.join("welcome.txt").exists());
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_link_source_stops_the_backup_before_anything_is_copied() {
+        let base = temp_dir("link");
+        let source = base.join("cfg");
+        fs::create_dir_all(&source).expect("cfg");
+        fs::write(source.join("server_cfg.ini"), "[SERVER]\n").expect("cfg");
+        let outside = base.join("altrove");
+        fs::create_dir_all(&outside).expect("fuori");
+        // welcome.txt è una junction: il controllo è fail-closed e precede ogni copia
+        junction::create(&outside, source.join("welcome.txt")).expect("junction");
+        let destination = base.join("backup");
+        fs::create_dir_all(&destination).expect("backup");
+
+        assert!(copy_cfg_files(&source, &destination).is_err());
+        assert_eq!(
+            fs::read_dir(&destination).expect("dir").count(),
+            0,
+            "nessun file deve essere copiato prima del controllo"
+        );
+        let _ = fs::remove_dir(source.join("welcome.txt"));
+        let _ = fs::remove_dir_all(&base);
     }
 }
